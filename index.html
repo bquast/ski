@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ski</title>
+<link rel="icon" href="data:,">
+<style>
+	html, body { margin: 0; height: 100%; overflow: hidden; background: #dce8f2; font-family: sans-serif; }
+	canvas { display: block; }
+	#vr { display: none; position: fixed; left: 50%; bottom: 64px; transform: translateX(-50%); padding: 16px 44px; font-size: 22px; font-weight: bold; color: #fff; background: #c8102e; border: 0; border-radius: 10px; cursor: pointer; }
+	#help { position: fixed; left: 0; right: 0; bottom: 14px; text-align: center; color: #0b1a2c; font-size: 14px; pointer-events: none; text-shadow: 0 0 6px #fff; }
+</style>
+</head>
+<body>
+<button id="vr">ENTER VR</button>
+<div id="help">Arrow keys + ENTER: options &nbsp;|&nbsp; pointer or A D: turn &nbsp;|&nbsp; W: push &nbsp;|&nbsp; S: brake &nbsp;|&nbsp; SHIFT: speed &nbsp;|&nbsp; SPACE: jump or fire &nbsp;|&nbsp; M: options &nbsp;|&nbsp; N: new run</div>
+<script src="three.min.js"></script>
+<script src="world.js"></script>
+<script src="ski.js"></script>
+<script src="chase.js"></script>
+<script src="main.js"></script>
+</body>
+</html>
