@@ -1,17 +1,18 @@
 # ski
 
-A ski and snowboard game for the Meta Quest 3 browser (WebXR). It also runs in a desktop browser.
+A ski and snowboard game for the Meta Quest 3 browser (WebXR), with a chase and a mission. It also runs in a desktop browser.
 It is a static site: no build step, no server code. The setup is the same as `cessna`.
 
 ## Files
 
 | File | Function |
 |---|---|
-| `index.html` | Page, VR button, five script tags |
+| `index.html` | Page, VR button, six script tags |
 | `three.min.js` | three.js r187, as a classic script (global `THREE`) |
-| `world.js` | Mountain, piste, trees, lift, village, sky |
+| `world.js` | Mountain, sections, jumps, crevasses, trees, houses, bases, sky |
 | `ski.js` | Physics of the skis and the snowboard. No drawing. |
-| `chase.js` | Spy chase: gun, enemies, waves, effects |
+| `chase.js` | Enemies, grenades, targets, the rules of the chase and the mission, effects |
+| `guns.js` | Pistol, machine gun, sniper rifle with scope, your grenades |
 | `main.js` | Setup, input, equipment, hub, sound, frame loop |
 | `.nojekyll` | Tells GitHub Pages to publish the files as they are |
 
@@ -25,115 +26,151 @@ WebXR needs HTTPS. The two hosts supply it.
 
 ## The mountain
 
-One run of 7.9 km from 2950 m down to 1000 m. The piste is the bottom of a wide valley, so the terrain brings you back to it.
+One run of 7.9 km, from 3550 m down to 925 m. Each section is different.
 
-- Slope: 5 to 21 degrees. The steep part ("the wall") is at 3.0 km. The flat part is at 5.2 km.
-- Above 2150 m there are rocks. Below 2150 m there is forest on the two sides of the piste.
-- Orange poles are the left edge of the piste. Blue poles are the right edge.
-- Blue ramps are jumps. There is one each 560 m, left and right in turn. You can go around them.
-- Start positions: TOP (0 km), MIDDLE (2.6 km), LOW (5.0 km).
+| Start (km) | Section | Slope | What is there |
+|---|---|---|---|
+| 0.0 | HEADWALL | 31° | Wide and steep. Ramps and ledges. |
+| 0.7 | GLACIER | 12° | Blue ice (little grip), ice blocks, 11 crevasses, rollers |
+| 1.9 | ICEFALL | 27° | Ledges with drops of 2.5 to 6.5 m, rocks |
+| 2.5 | OVERLOOK | 2° | A flat edge above the upper base |
+| 2.6 | UPPER BASE | 30°, then flat | Buildings, watchtowers, fuel tanks, radar |
+| 3.1 | THE GULLY | 27° | 26 m wide, rock walls, fast bends, small ramps |
+| 3.9 | MOGULS | 20° | Bumps, ramps, a group of houses at the bottom |
+| 4.4 | THE TREES | 16° | Trees on the piste. One clear line bends left and right. |
+| 5.5 | OVERLOOK, LOWER BASE | 2°, 30°, flat | The second base, with a helicopter on a pad |
+| 6.1 | THE CLIFFS | 21° | Ledges, rollers, some trees |
+| 7.2 | VILLAGE | 9° | 84 houses. You ski through the streets. |
 
-## Controls on the Quest
+- Jumps: 73 ramps (blue) and 27 ledges, and rollers each 40 m in many sections. A test run had 83 jumps and 57 seconds in the air.
+- Crevasses: a row of thick red poles shows each one. Above 40 km/h you fly across from the ramp at its top edge. Slower: jump, or go around the open end (where the poles stop).
+- Orange poles are the left edge of the piste. Blue poles are the right edge. Deep snow off the piste slows you.
+- If you are almost stopped and do not push, you stay where you are, also on a steep slope.
+
+## Controls on the Quest: skiing
 
 Stand up. Look down the piste. Push B or Y to set your center.
 
 | | Skis | Snowboard |
 |---|---|---|
-| Turn | Lean your body to the side | Stand with one side to the front. Lean to your toes or your heels. |
-| Turn (hands) | Your hands are a bar: left hand down = left turn | Your front hand points where you want to go |
-| Go | Put the pole tips in the snow and push to the rear | Pull a trigger |
-| Brake | Squeeze a grip | Squeeze a grip |
-| Speed | Bend your knees | Bend your knees |
-| Jump | Bend your knees, then stand up fast | Same |
+| Position | Look forward | Stand with your side to the front (the option "Board stance" sets which foot is in front). Turn your head to look down the piste. |
+| Turn | Lean your body to the side. Or: your hands are a bar, left hand down = left turn. | Turn your shoulders. The line from your rear hand to your front hand is the steering. Lean to your toes or heels helps. |
+| Go | Put the pole tips in the snow and push to the rear | Pull a trigger (free run) |
+| Brake | Squeeze a grip, or stick to the rear | Same |
+| Speed | Bend your knees | Same |
+| Jump | Bend your knees, then stand up fast. A faster move gives a higher jump. | Same |
 
-| Button | Function |
+If you look forward on the snowboard, your shoulders are across the board and the board makes a full turn. This is intended: it makes you stand to the side.
+With a weapon in your hands, the snowboard uses only the lean to your toes or heels.
+
+## Controls on the Quest: chase and mission
+
+| Hand | Button | Function |
+|---|---|---|
+| Gun hand | Trigger | Fire |
+| Gun hand | A (or X) | Next weapon |
+| Gun hand | Grip | Brake |
+| Other hand | Grip, near the weapon | Hold the weapon with two hands |
+| Other hand | Grip, away from the weapon | Brake |
+| Other hand | Trigger | Hold a grenade. Move your arm and release to throw. |
+| Other hand | X (or A) | Options board |
+| Both | B or Y | Set your center |
+| Both | Stick | Left, right: turn. Forward: push. Rear: brake. |
+
+The other hand keeps its ski pole when it does not hold the weapon or a grenade.
+
+## Weapons
+
+| Weapon | Use |
 |---|---|
-| A or X | Open and close the options board |
-| B or Y | Set your center and your forward direction |
-| Stick left, right | Turn (added to the lean) |
-| Stick forward, rear | Push (below 14 km/h), brake |
-| Trigger | Push (below 14 km/h). In the spy chase: the gun hand fires, the other hand pushes. |
-| Options board | Stick: select and change. Trigger: OK. |
+| PISTOL | One hand. Red dot. No reload. |
+| MACHINE GUN | 14 shots each second, 40 shots, then 1.5 s reload. With one hand it is not accurate. With two hands it points from your gun hand to your other hand and is accurate. |
+| SNIPER RIFLE | 12 times the damage, 5 shots, range 1500 m. Hold it with two hands and put the scope near your eye: the scope shows a zoom picture. |
+| Grenades | 6. One new grenade each 12 seconds. They explode after 1.8 s, or when they touch an enemy. Radius 10 m. |
 
-A hard turn makes you skid and slows you. A soft turn keeps your speed.
-If you hit a tree, or land too hard, you fall. After 2 seconds you can go again.
+## Enemies
+
+The game keeps a number of enemies around you at all times ("Enemies": FEW 6, MANY 10, VERY MANY 15, and more near the end).
+They come from behind, from the sides in front of you, and some wait on the piste.
+
+| Enemy | Hits | Points | Notes |
+|---|---|---|---|
+| Skier | 1 | 100 | Some throw grenades |
+| Parachute skier | 1 | 150 | A hit on the parachute is sufficient |
+| Snowmobile | 2 | 250 | Some throw grenades |
+| Tracked truck | 14 | 500 | Do not touch it. It cannot go into the gully, the trees or the glacier. |
+| Airplane | 7 | 800 | Fires a line down the piste. Move to the side. |
+| Helicopter | 14 | 1000 | Fires a line in the snow that comes to you. Turn away. |
+| Guard (bases) | 1 | 200 | Stands on the snow or on a watchtower |
+
+How to ski smart:
+
+- Enemies aim at the position where you will be. If you turn, they miss. If you go straight, they hit.
+- Bend your knees: you are a smaller target.
+- Enemies fire more when there are more of them. Each enemy that you shoot gives you some health.
+- Lead them through the trees, the village and the crevasses: snowmobiles crash often, skiers sometimes. Trucks stop.
+- An enemy grenade shows a red ring on the snow. Go away from the ring.
+- Health comes back after 5 seconds without a hit. Each new section is a checkpoint.
+
+## Mission
+
+1. Go down to the upper base (chase).
+2. Stop in the green light at the overlook.
+3. Use the sniper rifle: shoot the 8 guards. The alarm starts 3 seconds after the first hit; then they fire at you.
+4. Destroy the 3 fuel tanks and the radar. You can do this from the overlook (one sniper shot explodes a tank), or ski through the base with the machine gun and grenades. One explosion can destroy the tanks near it.
+5. Alarm: go to the lower base (chase, through the gully, the moguls and the trees).
+6. Stop at the second overlook. Shoot the 10 guards.
+7. Destroy the helicopter on its pad, 4 tanks and the radar.
+8. Escape through the cliffs and the village to the finish line.
+
+If you go past a base and targets remain, you start again at the overlook. In the CHASE game the two bases are also there, for points.
 
 ## Controls on the Mac
 
 | | |
 |---|---|
-| Turn | pointer (no press), or `A` `D` |
-| Push | `W` |
-| Brake | `S` |
+| Turn | pointer (no press) in a free run, or `A` `D` |
+| Push, brake | `W`, `S` |
 | Speed | `SHIFT` |
-| Jump | `SPACE` or `J` |
+| Jump | `J` (and `SPACE` in a free run) |
+| Fire | click or `SPACE` |
+| Weapon | `1` `2` `3` |
+| Scope | `Q` or the right button |
+| Grenade | `G` |
 | Options board | `M`. Arrow keys: select and change. `ENTER`: OK. |
 | New run | `N` |
-| Spy chase | pointer: look and aim. `A` `D`: turn. Click or `SPACE`: fire. |
 
 ## Options
 
-| Option | Values |
-|---|---|
-| Equipment | SKIS, SNOWBOARD |
-| Game | FREE RUN, SPY CHASE |
-| Start | TOP, MIDDLE, LOW |
-| Easy skiing | OFF, ON. ON: the skis follow the piste if you do not steer, top speed is approximately 60 km/h, and you do not fall. |
-| Steer with | LEAN + HANDS, LEAN, STICK |
-| View turns | WITH THE PISTE (very slow, approximately 2 degrees each second), NEVER (you turn your body), WITH YOU |
-| Comfort ring | LIGHT, OFF, STRONG. A dark frame around your view that closes at speed. |
-| Gun hand | RIGHT, LEFT |
+Equipment, Game (FREE RUN, CHASE, MISSION), Enemies, Start (TOP, UPPER BASE, LOWER BASE), Easy skiing, Board stance, Steer with, View turns, Comfort ring (default OFF), Gun hand.
 
 The options and the best results stay in the browser (`localStorage`).
 
-## Comfort
-
-- The horizon always stays level. The view does not roll and does not pitch.
-- The view does not turn when the skis turn. The skis turn below you, and you move to the side.
-- The default "View turns" value follows the piste, not the skis. It is slow.
-- The hub is fixed in the play space, not on your head.
-- If the speed is too much: set "Easy skiing" to ON and "Comfort ring" to STRONG.
-
-## Spy chase
-
-Skiing is easy (see "Easy skiing"). One hand has a pistol with a red laser dot. The other hand keeps its pole.
-Enemies come in 12 waves. Each wave is also the position where you start again if you are down.
-
-| Enemy | Hits | Points | Attack |
-|---|---|---|---|
-| Skier | 1 | 100 | Single shots |
-| Parachute skier | 1 | 150 | Single shots from the air, then it is a skier. A hit on the parachute is sufficient. |
-| Snowmobile | 2 | 250 | Single shots |
-| Tracked truck | 9 | 500 | Fast shots from the roof. Do not touch the truck. |
-| Airplane | 5 | 800 | Flies up the piste to you and fires a line down the piste. Move to the side. Three passes. |
-| Helicopter | 10 | 1000 | Fires a line in the snow that comes to you. Turn away from it. |
-
-Your health comes back after 4 seconds without a hit. At the finish line you get 10 points for each health point.
-
 ## Numbers that you can change
 
-- `main.js`, top: `POLE_TILT`, `POLE_GAIN`, `LEAN_FULL`, `HAND_TILT_FULL`, `HAND_YAW_FULL`, `FIRE_TIME`, `RING_ANGLE`.
+- `main.js`, top: `POLE_TILT`, `POLE_GAIN`, `LEAN_FULL`, `HAND_TILT_FULL`, `SHOULDER_FULL`, `TUCK_START`, `JUMP_RISE`, `JUMP_MIN`, `JUMP_MAX`.
   If the poles point in an incorrect direction in the headset, change `POLE_TILT`.
-- `ski.js`, object `GEAR`: friction, air drag, turn rate, edge grip, brake. `ASSIST_VMAX`, `ASSIST_VMIN`: easy mode speeds.
-- `chase.js`, objects `FOE` and `WAVES`: enemy strength, points, and the contents of each wave.
-- `world.js`, top: sizes, `TREELINE`, `START_T`, sun, fog. `slopeAt()` is the steepness of the run. `pisteX()` is its shape.
+- `ski.js`, object `GEAR`: friction, air drag, turn rate, edge grip, brake, landing speed that makes you fall.
+- `world.js`, list `SEC`: one line for each section (steepness, width, walls, moguls, trees, ice, rollers). `makeFeatures()` sets the number of jumps. `COMP` is the contents of the two bases.
+- `chase.js`: `FOE` (enemy strength and points), `DIFF` (number of enemies, shots each second, damage), `STAGES` (the mission).
+- `guns.js`: `WPN` (rate, damage, accuracy, magazine), `GREN_MAX`, `GREN_TIME`, `SCOPE_FOV`.
 
 ## Test results
 
-Physics, in Node (120 steps each second):
+Not tested in a headset. Tested in Node (physics) and in headless desktop Chrome (full game, and the VR input code with a simulated head and controllers).
 
 | Test | Result |
 |---|---|
-| Skis, along the piste, you stand | 91 km/h maximum, 62 km/h average, 7 min 36 s |
-| Skis, no steer input, knees bent | 142 km/h maximum |
-| Skis, easy mode, no input | Stays on the piste to the finish, 64 km/h maximum, no falls |
-| Brake from 72 km/h | Stop after 62 m |
-| Full turn for 4 seconds from 77 km/h | 27 km/h |
-| Jump ramps at 60 to 90 km/h | 0.5 to 1.0 s in the air |
+| Skis, automatic pilot, no brake | 122 km/h maximum (headwall), 9 to 10 minutes with falls |
+| Skis, automatic pilot, brake above 70 km/h | 9 min 50 s, 83 jumps, 57 s in the air |
+| Crevasse at 22 and 36 km/h, no jump | Falls in |
+| Crevasse at 50 km/h, or with a jump at all speeds | Goes across |
+| Stop on the 30° slope at the overlook | Stays stopped. One push: 50 km/h after 3 s. |
+| Sight lines from the two overlooks | All guards and targets are visible, at 200 to 400 m |
+| Mission, automatic player, one kill each 0.8 s | Complete in 12 minutes, minimum health approximately 25, no restart |
+| Chase, MANY, one kill each 0.8 s | 1 restart. Without shots: the player does not get past the glacier. |
 
-Spy chase, in headless Chrome, automatic player: a shot each 0.35 s gives no damage; a shot each 1.2 s gives a minimum health of 21; no shots gives 12 restarts.
-
-Drawing: approximately 210 000 triangles and 25 draw calls at the maximum.
+Drawing: approximately 130 000 to 220 000 triangles.
 
 ## three.js
 

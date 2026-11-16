@@ -1,9 +1,9 @@
 // main.js - setup, input, your equipment, the hub, sound, the frame loop.
-// Classic script. It uses THREE, world.js, ski.js and chase.js.
+// Classic script. It uses THREE, world.js, ski.js, chase.js and guns.js.
 //
 // Order of this file:
 //   numbers that you can change, state, options, setup, input, view, equipment,
-//   gun, hub, sound, game flow, frame loop.
+//   hub, sound, game flow, frame loop.
 
 // ---------- numbers that you can change ----------
 
@@ -12,9 +12,12 @@ var POLE_GAIN = 1.6;        // speed that you get for each meter of pole push (m
 var LEAN_FULL = 0.17;       // body lean to the side for a full turn (m)
 var LEAN_DEAD = 0.015;      // lean below this value does nothing (m)
 var HAND_TILT_FULL = 0.45;  // skis: one hand higher than the other, as a ratio of the hand distance, for a full turn
-var HAND_YAW_FULL = 0.6;    // snowboard: angle between your arms and the board for a full turn (radians)
-var FIRE_TIME = 0.13;       // seconds between shots
-var RING_ANGLE = [40, 0, 30];   // comfort ring: open angle at speed, for LIGHT, OFF, STRONG (degrees)
+var SHOULDER_FULL = 0.55;   // snowboard: angle between your shoulders and the board for a full turn (radians)
+var TUCK_START = 0.92;      // your knees are bent when your head is below this part of your height
+var JUMP_RISE = 0.7;        // jump: your head must go up faster than this (m/s)
+var JUMP_MIN = 2.8;         // jump: speed up from the snow (m/s), minimum and maximum
+var JUMP_MAX = 5.5;
+var RING_ANGLE = [0, 40, 30];   // comfort ring: open angle at speed, for OFF, LIGHT, STRONG (degrees)
 
 // ---------- state ----------
 
@@ -23,22 +26,22 @@ var vr = false, lastT = 0, acc = 0;
 var game = {
 	state: 'menu',           // 'menu', 'run', 'done'
 	paused: false, spy: false,
-	time: 0, runTime: 0, vmax: 0, doneTime: 0,
+	time: 0, runTime: 0, vmax: 0, doneTime: 0, air: 0, jumps: 0,
 	msg: '', msgUntil: 0, result: '',
-	nFall: 0, nLand: 0, nHit: 0, respawns: 0, white: 0,
-	lastFire: 0, lastJump: 0, lastTuck: -9
+	nFall: 0, nLand: 0, nHit: 0, nCrev: 0, respawns: 0, white: 0, sec: -1,
+	lastJump: 0, lastTuck: -9
 };
 var head = { x: 0, y: 1.7, z: 0, yaw: 0, vy: 0 };
 var cal = { cx: 0, cz: 0, h: 1.7, fwd: 0, pole: 1.15, wait: 0 };   // your standing position, set by B or Y
 var viewDir = 0, rigYaw = 0, rigY = 0, hubYaw = 0, hubMove = false;
 var hands = { left: makeHand(), right: makeHand() };
-var keys = {}, mouse = { x: 0, y: 0, down: false };
+var keys = {}, mouse = { x: 0, y: 0, down: false, right: false };
 var menu = { sel: 0, held: false };
 var best = { time: {}, score: {} };
 
 function makeHand() {
 	return {
-		obj: null, src: null, has: false, kit: null, glove: null, pole: null, gun: null, laser: null, flash: null,
+		obj: null, src: null, has: false, kit: null, glove: null, pole: null, gripMesh: null,
 		px: 0, py: 0, pz: 0, seen: false, planted: false,
 		trig: 0, grip: 0, sx: 0, sy: 0, bA: false, bB: false,
 		pT: false, pA: false, pB: false
@@ -49,29 +52,31 @@ function makeHand() {
 
 var OPTS = [
 	{ key: 'gear', label: 'Equipment', vals: ['SKIS', 'SNOWBOARD'] },
-	{ key: 'game', label: 'Game', vals: ['FREE RUN', 'SPY CHASE'] },
-	{ key: 'start', label: 'Start', vals: ['TOP', 'MIDDLE', 'LOW'] },
+	{ key: 'game', label: 'Game', vals: ['FREE RUN', 'CHASE', 'MISSION'] },
+	{ key: 'diff', label: 'Enemies', vals: ['FEW', 'MANY', 'VERY MANY'] },
+	{ key: 'start', label: 'Start', vals: ['TOP', 'UPPER BASE', 'LOWER BASE'] },
 	{ key: 'assist', label: 'Easy skiing', vals: ['OFF', 'ON'] },
-	{ key: 'steer', label: 'Steer with', vals: ['LEAN + HANDS', 'LEAN', 'STICK'] },
+	{ key: 'stance', label: 'Board stance', vals: ['LEFT FOOT FRONT', 'RIGHT FOOT FRONT'] },
+	{ key: 'steer', label: 'Steer with', vals: ['BODY + HANDS', 'BODY', 'STICK'] },
 	{ key: 'turn', label: 'View turns', vals: ['WITH THE PISTE', 'NEVER', 'WITH YOU'] },
-	{ key: 'ring', label: 'Comfort ring', vals: ['LIGHT', 'OFF', 'STRONG'] },
+	{ key: 'ring', label: 'Comfort ring', vals: ['OFF', 'LIGHT', 'STRONG'] },
 	{ key: 'gun', label: 'Gun hand', vals: ['RIGHT', 'LEFT'] }
 ];
-var opt = { gear: 0, game: 0, start: 0, assist: 0, steer: 0, turn: 0, ring: 0, gun: 0 };
+var opt = { gear: 0, game: 0, diff: 1, start: 0, assist: 0, stance: 0, steer: 0, turn: 0, ring: 0, gun: 0 };
 
 function loadOptions() {
 	var o, b, i;
 	try {
-		o = JSON.parse(localStorage.getItem('ski-opt') || '{}');
+		o = JSON.parse(localStorage.getItem('ski-opt2') || '{}');
 		for (i = 0; i < OPTS.length; i++) if (o[OPTS[i].key] >= 0 && o[OPTS[i].key] < OPTS[i].vals.length) opt[OPTS[i].key] = o[OPTS[i].key];
-		b = JSON.parse(localStorage.getItem('ski-best') || '{}');
+		b = JSON.parse(localStorage.getItem('ski-best2') || '{}');
 		if (b.time) best.time = b.time;
 		if (b.score) best.score = b.score;
 	} catch (e) {}
 }
 
 function saveOptions() {
-	try { localStorage.setItem('ski-opt', JSON.stringify(opt)); localStorage.setItem('ski-best', JSON.stringify(best)); } catch (e) {}
+	try { localStorage.setItem('ski-opt2', JSON.stringify(opt)); localStorage.setItem('ski-best2', JSON.stringify(best)); } catch (e) {}
 }
 
 // ---------- setup ----------
@@ -86,7 +91,7 @@ function init() {
 	document.body.appendChild(renderer.domElement);
 
 	scene = new THREE.Scene();
-	camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.12, 30000);
+	camera = new THREE.PerspectiveCamera(72, window.innerWidth / window.innerHeight, 0.06, 30000);
 	camera.rotation.order = 'YXZ';
 	rig = new THREE.Group();
 	rig.add(camera);
@@ -95,6 +100,7 @@ function init() {
 	makeWorld(scene);
 	makeChase(scene);
 	makeGear();
+	makeGuns();
 	makeHub();
 	loadOptions();
 
@@ -115,7 +121,7 @@ function init() {
 	}
 
 	renderer.xr.addEventListener('sessionstart', function () { cal.wait = 0.6; });
-	renderer.xr.addEventListener('sessionend', function () { calibrate(); btn.textContent = 'ENTER VR'; });
+	renderer.xr.addEventListener('sessionend', function () { vr = false; calibrate(); btn.textContent = 'ENTER VR'; });
 	if (navigator.xr && navigator.xr.isSessionSupported) {
 		navigator.xr.isSessionSupported('immersive-vr').then(function (ok) {
 			if (ok) btn.style.display = 'block';
@@ -137,8 +143,9 @@ function init() {
 	window.addEventListener('keydown', onKey);
 	window.addEventListener('keyup', function (e) { keys[e.code] = false; });
 	window.addEventListener('mousemove', function (e) { mouse.x = e.clientX / window.innerWidth * 2 - 1; mouse.y = e.clientY / window.innerHeight * 2 - 1; });
-	window.addEventListener('mousedown', function () { mouse.down = true; initAudio(); });
-	window.addEventListener('mouseup', function () { mouse.down = false; });
+	window.addEventListener('mousedown', function (e) { if (e.button == 2) mouse.right = true; else mouse.down = true; initAudio(); });
+	window.addEventListener('mouseup', function (e) { if (e.button == 2) mouse.right = false; else mouse.down = false; });
+	window.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
 	toStart();
 	renderer.setAnimationLoop(frame);
@@ -182,7 +189,7 @@ function readHead(dt, xrFrame) {
 // readHands reads the two controllers: buttons, sticks, pole pushes. It returns the pole push (m/s).
 function readHands(dt) {
 	var names = ['left', 'right'], i, h, gp, o, push = 0, a = sk.hdg - rigYaw, fx = -Math.sin(a), fz = -Math.cos(a), rx = Math.cos(a), rz = -Math.sin(a);
-	var gunHand = opt.gun ? 'left' : 'right', hasPole, tip = readHands.tip, back, gy, was;
+	var gunHand = opt.gun ? 'left' : 'right', tip = readHands.tip, back, gy, was;
 	for (i = 0; i < 2; i++) {
 		h = hands[names[i]];
 		h.pT = h.trig > 0.5; h.pA = h.bA; h.pB = h.bB;
@@ -199,9 +206,9 @@ function readHands(dt) {
 
 		// pole: the tip is in the snow if it is below the surface. A hand that moves to the rear then pushes you forward.
 		o = h.obj;
-		hasPole = opt.gear == 0 && !(game.spy && names[i] == gunHand);
+		h.hasPole = opt.gear == 0 && !(game.spy && (names[i] == gunHand || gun.two || gun.hold));
 		was = h.planted; h.planted = false;
-		if (hasPole && h.seen && sk.ground && game.state == 'run') {
+		if (h.hasPole && h.seen && sk.ground && game.state == 'run') {
 			tip.set(0, -Math.cos(POLE_TILT) * cal.pole, Math.sin(POLE_TILT) * cal.pole).applyQuaternion(o.quaternion).add(o.position);
 			gy = sk.y - rigY + sk.rise * ((tip.x - cal.cx) * fx + (tip.z - cal.cz) * fz) + sk.tilt * ((tip.x - cal.cx) * rx + (tip.z - cal.cz) * rz);
 			if (tip.y < gy + 0.02) {
@@ -220,22 +227,22 @@ readHands.tip = new THREE.Vector3();
 // readSteer gives the steer input from your body: -1 = left, +1 = right.
 function readSteer() {
 	var a = sk.hdg - rigYaw, fx = -Math.sin(a), fz = -Math.cos(a), rx = Math.cos(a), rz = -Math.sin(a);
-	var L = hands.left, R = hands.right, raw = 0, dx, dz, l, cf, cr, sep;
-	if (opt.steer != 2) raw += dead((head.x - cal.cx) * rx + (head.z - cal.cz) * rz, LEAN_DEAD) / LEAN_FULL;
-	if (opt.steer == 0 && !game.spy && L.has && R.has) {
-		dx = R.px - L.px; dz = R.pz - L.pz;
-		if (opt.gear == 0) {
+	var L = hands.left, R = hands.right, F, B, raw = 0, lean = 0, dx, dz, sep, both = opt.steer == 0 && !game.spy && L.has && R.has;
+	if (opt.steer != 2) lean = dead((head.x - cal.cx) * rx + (head.z - cal.cz) * rz, LEAN_DEAD) / LEAN_FULL;
+	if (opt.gear == 0) {
+		raw = lean;
+		if (both) {
 			// skis: your hands are a bar. Left hand down = left turn.
-			sep = dx * rx + dz * rz;
+			dx = R.px - L.px; dz = R.pz - L.pz; sep = dx * rx + dz * rz;
 			if (sep > 0.2) raw -= dead((R.py - L.py) / sep, 0.07) / HAND_TILT_FULL;
-		} else {
-			// snowboard: you stand with one side to the front. The front hand points where you want to go.
-			l = Math.sqrt(dx * dx + dz * dz) || 1;
-			cf = (dx * fx + dz * fz) / l; cr = (dx * rx + dz * rz) / l;
-			if (cf < 0) { cf = -cf; cr = -cr; }
-			raw += sstep(0.4, 0.75, cf) * dead(Math.atan2(cr, cf), 0.05) / HAND_YAW_FULL;
 		}
-	}
+	} else if (both) {
+		// snowboard: you stand with one side to the front. The line from your rear hand to your front hand is your shoulders.
+		// Shoulders in line with the board = straight. Turn your shoulders = turn. Lean to your toes or heels helps.
+		F = opt.stance ? R : L; B = opt.stance ? L : R;
+		dx = F.px - B.px; dz = F.pz - B.pz;
+		raw = dead(Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz), 0.05) / SHOULDER_FULL + lean * 0.6;
+	} else raw = lean;      // with a weapon in your hands: lean to your toes or heels
 	return raw;
 }
 
@@ -250,18 +257,24 @@ function onKey(e) {
 		else if (e.code == 'ArrowLeft' || e.code == 'KeyA') menuChange(-1);
 		else if (e.code == 'ArrowRight' || e.code == 'KeyD' || e.code == 'Enter' || e.code == 'Space') menuChange(1);
 	} else if (game.state == 'done' && (e.code == 'Enter' || e.code == 'Space')) menuButton();
-	else if (e.code == 'KeyJ' || (e.code == 'Space' && !game.spy)) ctl.jump = sk.ground;
+	else if (e.code == 'KeyJ' || (e.code == 'Space' && !game.spy)) ctl.jump = sk.ground ? 4 : 0;
+	else if (game.spy && e.code == 'Digit1') setWeapon(0);
+	else if (game.spy && e.code == 'Digit2') setWeapon(1);
+	else if (game.spy && e.code == 'Digit3') setWeapon(2);
 	if (e.code == 'Space' || e.code.indexOf('Arrow') == 0) e.preventDefault();
 }
 
 // readInput fills ctl from the controllers, your body, the keys and the pointer.
 function readInput(dt) {
 	var L = hands.left, R = hands.right, push = readHands(dt), k = 1 - Math.exp(-dt * 10);
-	var gunHand = opt.gun ? L : R, other = opt.gun ? R : L, steer = 0, brake = 0, tuck = 0, sy, trigPush, m;
+	var G = opt.gun ? L : R, O = opt.gun ? R : L, steer = 0, brake = 0, tuck = 0, sy, m, spyRun = game.spy && game.state == 'run';
 
-	// buttons that work in all states
+	// buttons that work in all states. In a chase, the low button of the gun hand selects the next weapon.
 	if ((L.bB && !L.pB) || (R.bB && !R.pB)) { calibrate(); say('CENTER SET', 1.5); }
-	if ((L.bA && !L.pA) || (R.bA && !R.pA)) menuButton();
+	if (spyRun) {
+		if (G.bA && !G.pA) setWeapon((gun.w + 1) % 3);
+		if (O.bA && !O.pA) menuButton();
+	} else if ((L.bA && !L.pA) || (R.bA && !R.pA)) menuButton();
 
 	if (game.state == 'menu') {
 		sy = Math.abs(L.sy) > Math.abs(R.sy) ? L.sy : R.sy; m = Math.abs(L.sx) > Math.abs(R.sx) ? L.sx : R.sx;
@@ -271,7 +284,7 @@ function readInput(dt) {
 			if (Math.abs(sy) > Math.abs(m)) menuMove(sy > 0 ? 1 : -1); else menuChange(m > 0 ? 1 : -1);
 		}
 		if ((L.trig > 0.5 && !L.pT) || (R.trig > 0.5 && !R.pT)) menuChange(1);
-		ctl.push = 0;
+		ctl.push = 0; ctl.jump = 0;
 		return;
 	}
 	if (game.state == 'done') {
@@ -282,14 +295,17 @@ function readInput(dt) {
 
 	if (vr) {
 		steer = readSteer() + clamp(L.sx + R.sx, -1, 1);
-		brake = Math.max(L.grip, R.grip, Math.max(L.sy, R.sy));
-		tuck = clamp((cal.h * 0.9 - head.y) / (cal.h * 0.2), 0, 1);
-		if (tuck > 0.3) game.lastTuck = game.time;
-		// stand up fast from bent knees = jump
-		if (head.vy > 1.0 && sk.ground && game.time - game.lastTuck < 0.6 && game.time - game.lastJump > 1.2) { ctl.jump = true; game.lastJump = game.time; }
-		// push without poles: stick forward, or the trigger of the hand that has no gun
-		trigPush = game.spy ? other.trig > 0.5 : (L.trig > 0.5 || R.trig > 0.5);
-		if ((Math.min(L.sy, R.sy) < -0.5 || trigPush) && sk.speed < 4) push += 2.5 * dt;
+		// brake: a grip button (not the grip that holds the weapon with two hands), or a stick to the rear
+		brake = Math.max(game.spy ? G.grip : L.grip, game.spy && gun.two ? 0 : game.spy ? O.grip : R.grip, Math.max(L.sy, R.sy));
+		// bend your knees = less air drag
+		tuck = clamp((cal.h * TUCK_START - head.y) / (cal.h * 0.18), 0, 1);
+		if (tuck > 0.15) game.lastTuck = game.time;
+		// stand up fast from bent knees = jump. A faster move gives a higher jump.
+		if (head.vy > JUMP_RISE && sk.ground && game.time - game.lastTuck < 0.5 && game.time - game.lastJump > 0.8) {
+			ctl.jump = clamp(JUMP_MIN + 2.5 * (head.vy - JUMP_RISE), JUMP_MIN, JUMP_MAX); game.lastJump = game.time;
+		}
+		// push without poles: stick forward. In a free run also a trigger.
+		if ((Math.min(L.sy, R.sy) < -0.5 || (!game.spy && (L.trig > 0.5 || R.trig > 0.5))) && sk.speed < 4) push += 2.5 * dt;
 	} else {
 		steer = (keys.KeyD || keys.ArrowRight ? 1 : 0) - (keys.KeyA || keys.ArrowLeft ? 1 : 0);
 		if (!game.spy) steer += clamp(dead(mouse.x, 0.06) * 1.6, -1, 1);
@@ -323,13 +339,15 @@ function placeRig(dt) {
 	rig.rotation.y = rigYaw;
 	if (!vr) {
 		camera.position.set(0, head.y, 0);
-		camera.rotation.set(-mouse.y * 0.5 - 0.1, -mouse.x * (game.spy ? 1.4 : 0.7), 0);
+		// with the scope, the pointer moves the view slowly
+		if (game.spy && gun.scoped) camera.rotation.set(gun.pitch0 - (mouse.y - gun.my0) * 0.12, gun.yaw0 - (mouse.x - gun.mx0) * 0.2, 0);
+		else camera.rotation.set(-mouse.y * 0.5 - 0.1, -mouse.x * (game.spy ? 1.4 : 0.7), 0);
 	}
 }
 
 // ---------- equipment ----------
 
-var gear = null, skis = null, board = null, ring = null, flashPlane = null, aimDot = null, deskGun = null;
+var gear = null, skis = null, board = null, ring = null, flashPlane = null;
 
 function makeGear() {
 	var mat = new THREE.MeshLambertMaterial({ vertexColors: true }), names = ['left', 'right'], i, h, m, cv, c, g, x;
@@ -343,15 +361,17 @@ function makeGear() {
 			['b', 0.085, 0.05, 0.42, i * 0.14, 0.045, 0.02, 0x30343a], ['b', 0.11, 0.16, 0.3, i * 0.14, 0.14, 0.03, BOOT]);
 	}
 	skis = new THREE.Mesh(partsGeo(x), mat);
+	// board: the boots point to the right (left foot in front). For the other stance the model is mirrored.
 	board = new THREE.Mesh(partsGeo([
 		['b', 0.27, 0.025, 1.3, 0, 0.012, 0, 0x1e5fbf], ['b', 0.27, 0.025, 0.2, 0, 0.04, -0.74, 0x1e5fbf, 0.3], ['b', 0.27, 0.025, 0.2, 0, 0.04, 0.74, 0x1e5fbf, -0.3],
-		['b', 0.26, 0.012, 0.12, 0, 0.03, 0, 0xffffff],
-		['b', 0.3, 0.16, 0.12, 0, 0.11, -0.26, BOOT, 0, 0.25, 0], ['b', 0.3, 0.16, 0.12, 0, 0.11, 0.26, BOOT, 0, -0.1, 0]
+		['b', 0.26, 0.012, 0.1, 0, 0.03, -0.58, 0xffd24a],
+		['b', 0.3, 0.16, 0.12, 0.02, 0.11, -0.26, BOOT, 0, 0.26, 0], ['b', 0.3, 0.16, 0.12, 0.02, 0.11, 0.26, BOOT, 0, -0.1, 0],
+		['b', 0.1, 0.05, 0.14, 0.15, 0.06, -0.3, 0xffffff, 0, 0.26, 0], ['b', 0.1, 0.05, 0.14, 0.15, 0.06, 0.27, 0xffffff, 0, -0.1, 0]
 	]), mat);
 	gear.add(skis, board);
 	rig.add(gear);
 
-	// each hand: glove, pole, gun
+	// each hand: glove, pole
 	for (i = 0; i < 2; i++) {
 		h = hands[names[i]];
 		h.kit = new THREE.Group();
@@ -362,16 +382,8 @@ function makeGear() {
 		h.pole.rotation.x = -POLE_TILT;
 		g = new THREE.Mesh(partsGeo([['c', 0.018, 0.016, 0.14, 0, -0.03, 0, 0x22252a, 0, 0, 0, 6]]), mat);
 		g.rotation.x = -POLE_TILT;
-		h.gun = new THREE.Group();
-		h.gun.add(new THREE.Mesh(partsGeo([
-			['b', 0.034, 0.045, 0.2, 0, 0, -0.1, 0x2a2d32], ['b', 0.03, 0.11, 0.045, 0, -0.07, -0.01, 0x1b1d20, 0.2], ['b', 0.012, 0.03, 0.05, 0, -0.035, -0.06, 0x1b1d20]
-		]), mat));
-		h.laser = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.004, 1), new THREE.MeshBasicMaterial({ color: 0xff2020, transparent: true, opacity: 0.45, fog: false }));
-		h.flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: puffTex, color: 0xffd060, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, fog: false }));
-		h.flash.position.z = -0.24; h.flash.scale.setScalar(0.16); h.flash.visible = false;
-		h.gun.add(h.laser, h.flash);
-		h.kit.add(h.glove, h.pole, g, h.gun);
-		h.grip = 0; h.gripMesh = g;
+		h.kit.add(h.glove, h.pole, g);
+		h.gripMesh = g;
 	}
 
 	// comfort ring: a dark frame around your view that closes at speed
@@ -385,34 +397,24 @@ function makeGear() {
 	flashPlane = new THREE.Mesh(new THREE.PlaneGeometry(6, 6), new THREE.MeshBasicMaterial({ color: 0xff0000, transparent: true, opacity: 0, depthTest: false, depthWrite: false, fog: false }));
 	flashPlane.position.z = -0.6; flashPlane.renderOrder = 21; flashPlane.visible = false;
 	camera.add(ring, flashPlane);
-
-	aimDot = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff2020, fog: false, depthTest: false, transparent: true }));
-	aimDot.renderOrder = 15; aimDot.visible = false;
-	scene.add(aimDot);
-
-	// desktop: the gun is at the bottom right of the view
-	deskGun = new THREE.Group();
-	deskGun.position.set(0.17, -0.16, -0.5);
-	deskGun.add(new THREE.Mesh(hands.right.gun.children[0].geometry, mat));
-	camera.add(deskGun);
 }
 
 function updateGear(dt) {
-	var names = ['left', 'right'], gunHand = opt.gun ? 'left' : 'right', i, h, n, v, a, s, c, sn;
+	var names = ['left', 'right'], i, h, n, v, a, s, c, sn;
 	// skis or board
 	skis.visible = opt.gear == 0; board.visible = opt.gear == 1;
+	board.scale.x = opt.stance ? -1 : 1;
 	gear.position.set(cal.cx, sk.y - rigY, cal.cz);
 	gear.rotation.set(Math.atan(sk.rise), sk.hdg - rigYaw, Math.asin(clamp(sk.tilt, -0.7, 0.7)) - ctl.steer * 0.35 * Math.min(1, sk.speed / 8));
 
 	for (i = 0; i < 2; i++) {
 		h = hands[names[i]];
-		h.pole.visible = h.gripMesh.visible = opt.gear == 0 && !(game.spy && names[i] == gunHand);
-		h.gun.visible = game.spy && names[i] == gunHand && vr;
+		h.pole.visible = h.gripMesh.visible = !!h.hasPole;
 	}
 
 	// snow spray when you skid or brake
 	if (sk.ground && sk.speed > 2 && game.state != 'menu') {
-		n = Math.min(4, Math.floor((sk.skid * 0.8 + ctl.brake * sk.speed * 0.15 + (sk.fallen > 0 ? 3 : 0)) * 60 * dt + Math.random()));
+		n = Math.min(4, Math.floor((sk.skid * 0.8 + ctl.brake * sk.speed * 0.15 + (sk.fallen > 0 ? 3 : 0) + (sk.surf == 2 ? sk.speed * 0.05 : 0)) * 60 * dt + Math.random()));
 		c = Math.cos(sk.hdg); sn = Math.sin(sk.hdg);
 		for (i = 0; i < n; i++) {
 			s = (Math.random() - 0.5) * 1.4;
@@ -422,7 +424,7 @@ function updateGear(dt) {
 	}
 
 	// comfort ring
-	v = vr && opt.ring != 1 && game.state != 'menu' ? Math.max(sstep(4, 15, sk.speed), sk.fallen > 0 ? 1 : 0) : 0;
+	v = vr && opt.ring != 0 && game.state != 'menu' ? Math.max(sstep(4, 15, sk.speed), sk.fallen > 0 ? 1 : 0) : 0;
 	ring.visible = v > 0.02;
 	if (ring.visible) {
 		a = lerp(62, RING_ANGLE[opt.ring], v) * Math.PI / 180;
@@ -436,49 +438,19 @@ function updateGear(dt) {
 	if (flashPlane.visible) { flashPlane.material.opacity = v; flashPlane.material.color.setHex(game.white * 0.8 > chase.flash * 0.4 ? 0xffffff : 0xff1010); }
 }
 
-// ---------- gun ----------
-
-var GV1 = new THREE.Vector3(), GV2 = new THREE.Vector3();
-
-function updateGun() {
-	var h = hands[opt.gun ? 'left' : 'right'], on = game.spy && game.state == 'run', fire = false, src;
-	aimDot.visible = false;
-	deskGun.visible = on && !vr;
-	hands.left.flash.visible = hands.right.flash.visible = false;
-	if (!on) return;
-	if (vr) {
-		if (!h.has) return;
-		src = h.obj; fire = h.trig > 0.5;
-	} else { src = camera; fire = mouse.down || keys.Space || keys.KeyF; }
-	src.getWorldPosition(GV1); src.getWorldDirection(GV2);
-	if (vr) GV2.negate();      // for a controller, getWorldDirection gives +z. The gun points to -z.
-	else GV1.y -= 0.15;
-	gunAim(GV1.x, GV1.y, GV1.z, GV2.x, GV2.y, GV2.z);
-	aimDot.visible = true;
-	aimDot.position.set(AIM.x, AIM.y, AIM.z);
-	aimDot.scale.setScalar(Math.max(0.012, AIM.dist * (AIM.foe ? 0.009 : 0.005)));
-	h.laser.scale.z = Math.min(AIM.dist, 40); h.laser.position.z = -h.laser.scale.z / 2 - 0.2;
-	if (fire && chase.down == 0 && game.time - game.lastFire > FIRE_TIME) {
-		game.lastFire = game.time;
-		fireGun(GV1.x, GV1.y, GV1.z, GV2.x, GV2.y, GV2.z);
-		sndShot(0);
-		if (vr) { buzz(h, 0.8, 40); h.flash.visible = true; h.flash.material.rotation = Math.random() * 6; }
-	}
-}
-
 // ---------- hub ----------
 
-// The hub is above your forward view. It shows speed, time and messages.
+// The hub is above your forward view. It shows speed, time, health, the objective, the weapon and messages.
 // The options are on a second board that opens with A or X.
 
 var hub = null, statusMesh = null, menuMesh = null, statusCv = null, menuCv = null, statusT = 0, menuKey = '';
 
 function makeHub() {
 	hub = new THREE.Group();
-	statusCv = document.createElement('canvas'); statusCv.width = 1024; statusCv.height = 256;
-	menuCv = document.createElement('canvas'); menuCv.width = 1024; menuCv.height = 832;
-	statusMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.375), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(statusCv), transparent: true, depthTest: false, depthWrite: false, fog: false }));
-	menuMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.3), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(menuCv), transparent: true, depthTest: false, depthWrite: false, fog: false }));
+	statusCv = document.createElement('canvas'); statusCv.width = 1024; statusCv.height = 320;
+	menuCv = document.createElement('canvas'); menuCv.width = 1024; menuCv.height = 1024;
+	statusMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.47), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(statusCv), transparent: true, depthTest: false, depthWrite: false, fog: false }));
+	menuMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(menuCv), transparent: true, depthTest: false, depthWrite: false, fog: false }));
 	statusMesh.material.map.colorSpace = menuMesh.material.map.colorSpace = THREE.SRGBColorSpace;
 	statusMesh.renderOrder = 30; menuMesh.renderOrder = 31;
 	statusMesh.rotation.x = 0.26;
@@ -501,63 +473,74 @@ function menuRows() {
 }
 
 function drawStatus() {
-	var c = statusCv.getContext('2d'), msg = '', w;
-	c.clearRect(0, 0, 1024, 256);
-	c.fillStyle = 'rgba(8,18,32,0.6)'; c.fillRect(0, 0, 1024, 256);
+	var c = statusCv.getContext('2d'), msg = '', w, hot = false, W = WPN[gun.w], s;
+	c.clearRect(0, 0, 1024, 320);
+	c.fillStyle = 'rgba(8,18,32,0.6)'; c.fillRect(0, 0, 1024, 320);
 	c.fillStyle = '#ffffff'; c.textBaseline = 'middle';
 	c.font = 'bold 84px sans-serif'; c.textAlign = 'left';
-	c.fillText((sk.speed * 3.6).toFixed(0), 36, 76);
+	c.fillText((sk.speed * 3.6).toFixed(0), 36, 72);
 	w = c.measureText((sk.speed * 3.6).toFixed(0)).width;
-	c.font = 'bold 36px sans-serif'; c.fillText('km/h', 48 + w, 92);
+	c.font = 'bold 36px sans-serif'; c.fillText('km/h', 48 + w, 88);
 	if (game.spy) {
 		// health bar and score
-		c.fillStyle = 'rgba(255,255,255,0.25)'; c.fillRect(330, 52, 330, 44);
-		c.fillStyle = chase.health > 35 ? '#3ddc84' : '#ff4040'; c.fillRect(330, 52, 3.3 * chase.health, 44);
+		c.fillStyle = 'rgba(255,255,255,0.25)'; c.fillRect(330, 48, 330, 44);
+		c.fillStyle = chase.health > 35 ? '#3ddc84' : '#ff4040'; c.fillRect(330, 48, 3.3 * clamp(chase.health, 0, 100), 44);
 		c.fillStyle = '#ffffff'; c.font = 'bold 60px sans-serif'; c.textAlign = 'right';
-		c.fillText(String(chase.score), 990, 76);
+		c.fillText(String(chase.score), 990, 72);
 	} else {
-		c.font = 'bold 72px sans-serif'; c.textAlign = 'center'; c.fillText(timeText(game.runTime), 512, 76);
-		c.textAlign = 'right'; c.font = 'bold 52px sans-serif'; c.fillText(Math.max(0, (T_END - sk.t) / 1000).toFixed(1) + ' km', 990, 76);
+		c.font = 'bold 72px sans-serif'; c.textAlign = 'center'; c.fillText(timeText(game.runTime), 512, 72);
+		c.textAlign = 'right'; c.font = 'bold 52px sans-serif'; c.fillText(Math.max(0, (T_END - sk.t) / 1000).toFixed(1) + ' km', 990, 72);
 	}
-	if (game.time < game.msgUntil) msg = game.msg;
-	else if (game.spy && chaseTime - chase.msgTime < 2.5) msg = chase.msg;
+	// middle line: message, or the objective
+	if (game.time < game.msgUntil) { msg = game.msg; hot = true; }
+	else if (game.spy && chaseTime - chase.msgTime < 2.5) { msg = chase.msg; hot = true; }
 	else if (game.state == 'done') msg = game.result;
-	else if (game.spy) msg = 'WAVE ' + chase.wave + ' / ' + WAVES.length + '     DOWN ' + chase.kills;
-	else msg = 'MAX ' + (game.vmax * 3.6).toFixed(0) + ' km/h';
-	c.textAlign = 'center'; c.font = 'bold 60px sans-serif';
-	c.fillStyle = game.time < game.msgUntil || (game.spy && chaseTime - chase.msgTime < 2.5) ? '#ffd24a' : '#bcd0e6';
-	c.fillText(msg, 512, 186, 980);
+	else if (game.spy) msg = chase.text + (chase.left ? ':  ' + chase.left : '');
+	else msg = sectionName(sk.t);
+	c.textAlign = 'center'; c.font = 'bold 56px sans-serif';
+	c.fillStyle = hot ? '#ffd24a' : '#ffffff';
+	c.fillText(msg, 512, 170, 990);
+	// bottom line: weapon, or the numbers of the run
+	c.font = 'bold 40px sans-serif'; c.fillStyle = '#bcd0e6';
+	if (game.spy) {
+		s = W.name + (W.mag ? '  ' + (gun.reload > 0 ? 'RELOAD' : gun.ammo[gun.w]) : '') + (gun.two && vr ? '  2 HANDS' : '');
+		c.textAlign = 'left'; c.fillText(s, 36, 268);
+		c.textAlign = 'right'; c.fillText('GRENADES ' + gun.gren + '    DOWN ' + chase.kills, 990, 268);
+	} else c.fillText('MAX ' + (game.vmax * 3.6).toFixed(0) + ' km/h      JUMPS ' + game.jumps + '      AIR ' + game.air.toFixed(0) + ' s', 512, 268);
 	statusMesh.material.map.needsUpdate = true;
 }
 
 function drawMenu() {
-	var c = menuCv.getContext('2d'), rows = menuRows(), i, y, r, key;
+	var c = menuCv.getContext('2d'), rows = menuRows(), i, y, r, key, v;
 	key = menu.sel + JSON.stringify(opt) + game.paused + game.result + vr;
 	if (key == menuKey) return;
 	menuKey = key;
-	c.clearRect(0, 0, 1024, 832);
-	c.fillStyle = 'rgba(8,18,32,0.86)'; c.fillRect(0, 0, 1024, 832);
+	c.clearRect(0, 0, 1024, 1024);
+	c.fillStyle = 'rgba(8,18,32,0.86)'; c.fillRect(0, 0, 1024, 1024);
 	c.textBaseline = 'middle'; c.textAlign = 'center';
 	c.fillStyle = '#ffffff'; c.font = 'bold 64px sans-serif'; c.fillText('SKI', 512, 54);
 	if (game.result) { c.fillStyle = '#ffd24a'; c.font = 'bold 40px sans-serif'; c.fillText(game.result, 512, 112, 980); }
 	for (i = 0; i < rows.length; i++) {
-		y = 168 + i * 54; r = rows[i];
+		y = 172 + i * 54; r = rows[i];
 		if (i == menu.sel) { c.fillStyle = 'rgba(255,210,74,0.9)'; c.fillRect(40, y - 25, 944, 50); }
 		c.fillStyle = i == menu.sel ? '#081220' : '#ffffff';
 		c.font = 'bold 40px sans-serif';
 		if (typeof r == 'string') { c.textAlign = 'center'; c.fillText(r, 512, y); }
 		else {
+			v = r.key == 'start' && opt.game == 2 ? 'TOP' : r.vals[opt[r.key]];
 			c.textAlign = 'left'; c.fillText(r.label, 70, y);
-			c.textAlign = 'right'; c.fillText('<  ' + (r.key == 'assist' && opt.game == 1 ? 'ON' : r.vals[opt[r.key]]) + '  >', 954, y);
+			c.textAlign = 'right'; c.fillText('<  ' + v + '  >', 954, y);
 		}
 	}
-	c.textAlign = 'center'; c.fillStyle = '#bcd0e6'; c.font = '30px sans-serif';
+	c.textAlign = 'center'; c.fillStyle = '#bcd0e6'; c.font = '29px sans-serif';
 	if (vr) {
-		c.fillText('Stick: select and change.  Trigger: OK.  B or Y: set the center.', 512, 746);
-		c.fillText('Lean to turn.  Grips: brake.  Bend your knees: speed.  A or X: this board.', 512, 790, 990);
+		c.fillText('Stick: select and change.  Trigger: OK.  B or Y: set the center.  A or X: this board.', 512, 880, 990);
+		c.fillText('Lean to turn.  Grips or stick to the rear: brake.  Bend your knees: speed.  Stand up fast: jump.', 512, 922, 990);
+		c.fillText('Chase: trigger = fire.  A = next weapon.  Other hand: grip = hold the weapon, trigger = grenade.', 512, 964, 990);
 	} else {
-		c.fillText('Arrow keys: select and change.  ENTER: OK.  M: this board.', 512, 746);
-		c.fillText('Pointer or A D: turn.  W: push.  S: brake.  SHIFT: speed.  SPACE: jump or fire.', 512, 790, 990);
+		c.fillText('Arrow keys: select and change.  ENTER: OK.  M: this board.  N: new run.', 512, 880, 990);
+		c.fillText('Pointer or A D: turn.  W: push.  S: brake.  SHIFT: speed.  SPACE or J: jump.', 512, 922, 990);
+		c.fillText('Chase: click or SPACE = fire.  1 2 3 = weapon.  Q or right button = scope.  G = grenade.', 512, 964, 990);
 	}
 	menuMesh.material.map.needsUpdate = true;
 }
@@ -570,9 +553,10 @@ function updateHub(dt) {
 		if (Math.abs(d) > (game.state == 'menu' ? 0.4 : 0.7)) hubMove = true;
 		if (hubMove) { hubYaw += d * (1 - Math.exp(-dt * 4)); if (Math.abs(d) < 0.05) hubMove = false; }
 	}
+	hub.visible = vr || !(game.spy && gun.scoped);
 	hub.position.set(cal.cx, 0, cal.cz); hub.rotation.y = hubYaw;
-	statusMesh.position.set(0, cal.h + 0.62, -2.3);
-	menuMesh.position.set(0, cal.h - 0.12, -2.0);
+	statusMesh.position.set(0, cal.h + 0.66, -2.3);
+	menuMesh.position.set(0, cal.h - 0.1, -2.0);
 	menuMesh.visible = game.state == 'menu';
 	statusMesh.visible = !menuMesh.visible;
 	if (menuMesh.visible) drawMenu();
@@ -589,11 +573,10 @@ function menuChange(dx) {
 	var r = menuRows()[menu.sel];
 	if (r == 'CONTINUE') { game.state = 'run'; game.paused = false; return; }
 	if (r == 'START' || r == 'NEW RUN') { startRun(); return; }
-	if (r.key == 'assist' && opt.game == 1) return;
 	opt[r.key] = (opt[r.key] + dx + r.vals.length) % r.vals.length;
 	saveOptions();
-	// equipment, game and start position are for a new run: a change of these stops the run that you have
-	if (r.key == 'gear' || r.key == 'game' || r.key == 'start') {
+	// equipment, game, enemies and start position are for a new run: a change of these stops the run that you have
+	if (r.key == 'gear' || r.key == 'game' || r.key == 'start' || r.key == 'diff') {
 		if (game.paused) { game.paused = false; menu.sel--; }
 		toStart();
 	}
@@ -606,11 +589,13 @@ function menuButton() {
 	else if (game.state == 'done') { game.state = 'menu'; game.paused = false; menu.sel = 0; toStart(); }
 }
 
+function startT() { return START_T[opt.game == 2 ? 0 : opt.start]; }
+
 // toStart puts you at the start position, with no run.
 function toStart() {
 	stopChase(); game.spy = false;
 	sk.mode = opt.gear ? 'board' : 'ski';
-	resetSki(START_T[opt.start]);
+	resetSki(startT());
 	viewDir = sk.hdg; rigY = sk.y;
 }
 
@@ -654,6 +639,7 @@ function burst(type, freq, dur, vol) {
 }
 
 function sndShot(dist) { burst('lowpass', dist < 1 ? 2600 : 1500, 0.12, (dist < 1 ? 0.5 : 0.45) / (1 + dist / 30)); }
+function sndRifle() { burst('lowpass', 1100, 0.45, 0.9); }
 function sndBoom(dist) { burst('lowpass', 320, 1.0, 1.2 / (1 + dist / 90)); }
 function sndClick() { burst('highpass', 3000, 0.04, 0.2); }
 function sndThump(vol) { burst('lowpass', 170, 0.3, vol); }
@@ -664,7 +650,7 @@ function updateSound(dt) {
 	t = AC.currentTime;
 	snd.wind.g.gain.setTargetAtTime(on ? Math.min(0.5, sk.speed * sk.speed / 1400) : 0, t, 0.1);
 	snd.wind.f.frequency.setTargetAtTime(300 + sk.speed * 40, t, 0.1);
-	snd.carve.g.gain.setTargetAtTime(on && sk.ground ? Math.min(0.3, sk.skid * 0.1 + ctl.brake * sk.speed * 0.015 + sk.speed * 0.002) : 0, t, 0.05);
+	snd.carve.g.gain.setTargetAtTime(on && sk.ground ? Math.min(0.3, sk.skid * 0.1 + ctl.brake * sk.speed * 0.015 + sk.speed * (sk.surf == 1 ? 0.006 : 0.002)) : 0, t, 0.05);
 	for (i = 0; i < foes.length; i++) {
 		f = foes[i];
 		if (f.type != 'heli' && f.type != 'plane') continue;
@@ -674,7 +660,7 @@ function updateSound(dt) {
 	snd.rotor.g.gain.setTargetAtTime(on && near < 1e8 ? (0.5 + 0.5 * Math.sin(game.time * 70)) * 0.9 / (1 + near / 60) : 0, t, 0.02);
 }
 
-// playerHit: chase.js calls it when a bullet hits you.
+// playerHit: chase.js calls it when a bullet or an explosion hits you.
 function playerHit() {
 	buzz(hands.left, 1, 120); buzz(hands.right, 1, 120);
 	sndThump(0.7);
@@ -683,26 +669,29 @@ function playerHit() {
 // ---------- game flow ----------
 
 function startRun() {
-	game.spy = opt.game == 1;
+	game.spy = opt.game > 0;
 	sk.mode = opt.gear ? 'board' : 'ski';
-	sk.assist = game.spy || opt.assist == 1;
-	resetSki(START_T[opt.start]);
-	if (game.spy) startChase(sk.t); else stopChase();
-	game.state = 'run'; game.paused = false; game.runTime = 0; game.vmax = 0; game.result = '';
-	game.nFall = sk.nFall; game.nLand = sk.nLand; game.nHit = sk.nHit; game.respawns = chase.respawns;
+	sk.assist = opt.assist == 1;
+	resetSki(startT());
+	resetGuns();
+	if (game.spy) startChase(sk.t, opt.game == 2 ? 'mission' : 'chase', opt.diff); else stopChase();
+	game.state = 'run'; game.paused = false; game.runTime = 0; game.vmax = 0; game.air = 0; game.jumps = 0; game.result = '';
+	game.nFall = sk.nFall; game.nLand = sk.nLand; game.nHit = sk.nHit; game.nCrev = sk.nCrev; game.respawns = chase.respawns;
+	game.sec = PSEC[tIndex(sk.t)];
 	viewDir = sk.hdg; rigY = sk.y; acc = 0;
-	if (vr) say(opt.gear == 0 && !game.spy ? 'PUSH WITH YOUR POLES' : 'PULL THE TRIGGER TO PUSH OFF', 5);
-	else say('W: PUSH', 4);
+	if (!vr) say('W: PUSH', 4);
+	else if (opt.gear == 1) say((opt.stance ? 'RIGHT' : 'LEFT') + ' SHOULDER TO THE FRONT.  ' + (game.spy ? 'STICK' : 'TRIGGER') + ': PUSH', 6);
+	else say(game.spy ? 'PUSH: POLE, OR STICK FORWARD' : 'PUSH WITH YOUR POLES', 5);
 }
 
 function finishRun() {
-	var key = (opt.gear ? 'board' : 'ski') + opt.start, b;
+	var key = (opt.gear ? 'board' : 'ski') + opt.game + opt.diff + startT(), b;
 	game.state = 'done'; game.doneTime = game.time;
 	if (game.spy) {
 		endChase();
 		b = best.score[key] || 0;
 		if (chase.score > b) best.score[key] = b = chase.score;
-		game.result = 'MISSION COMPLETE   ' + chase.score + '   BEST ' + b;
+		game.result = (opt.game == 2 ? 'MISSION COMPLETE   ' : 'YOU GOT AWAY   ') + chase.score + '   BEST ' + b;
 	} else {
 		b = best.time[key] || 0;
 		if (!b || game.runTime < b) best.time[key] = b = game.runTime;
@@ -714,19 +703,28 @@ function finishRun() {
 
 // events: things that the physics and the chase did in this frame
 function events() {
+	var s;
+	if (sk.nCrev != game.nCrev) {
+		game.nCrev = sk.nCrev; game.nFall = sk.nFall; game.white = 1; rigY = sk.y;
+		say('CREVASSE. JUMP, OR GO AROUND', 2.5); sndThump(0.9);
+		buzz(hands.left, 1, 200); buzz(hands.right, 1, 200);
+		if (game.spy) damagePlayer(10);
+	}
 	if (sk.nFall != game.nFall) {
 		game.nFall = sk.nFall; game.white = 1;
 		say('WIPEOUT', 2); sndThump(0.9);
 		buzz(hands.left, 1, 200); buzz(hands.right, 1, 200);
 	}
 	if (sk.nLand != game.nLand) {
-		game.nLand = sk.nLand;
+		game.nLand = sk.nLand; game.jumps++; game.air += sk.lastAir;
 		sndThump(Math.min(0.8, sk.lastImpact / 10));
 		buzz(hands.left, 0.6, 60); buzz(hands.right, 0.6, 60);
-		if (sk.lastAir > 0.6 && sk.fallen == 0) say('AIR  ' + sk.lastAir.toFixed(1) + ' s', 1.5);
+		if (sk.lastAir > 0.8 && sk.fallen == 0 && !game.spy) say('AIR  ' + sk.lastAir.toFixed(1) + ' s', 1.5);
 	}
 	if (sk.nHit != game.nHit) { game.nHit = sk.nHit; sndThump(0.6); buzz(hands.left, 0.8, 100); buzz(hands.right, 0.8, 100); }
 	if (chase.respawns != game.respawns) { game.respawns = chase.respawns; viewDir = sk.hdg; rigY = sk.y; }
+	s = PSEC[tIndex(sk.t)];
+	if (s != game.sec && game.state == 'run') { game.sec = s; if (sk.moving && SEC[s][10] != SEC[Math.max(0, s - 1)][10]) say(SEC[s][10], 2.5); }
 	if (sk.speed > game.vmax) game.vmax = sk.speed;
 	if (game.state == 'run' && sk.t >= T_END) finishRun();
 }
@@ -753,11 +751,12 @@ function frame(ms, xrFrame) {
 	updateFx(dt);
 	placeRig(dt);
 	rig.updateMatrixWorld(true);
-	updateGun();
+	updateGuns(dt);
 	updateWorld(sk.x, sk.z, game.time);
 	updateGear(dt);
 	updateHub(dt);
 	updateSound(dt);
+	renderScope();
 	renderer.render(scene, camera);
 }
 
