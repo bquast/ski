@@ -172,16 +172,26 @@ function updateFx(dt) {
 
 var foeGeo = {}, foeMat = null, canopyMat = null, beam = null;
 
-function makeFoeModels() {
-	var BLK = 0x15171b, DRK = 0x0d0d0f, RED = 0xc8102e, GUN = 0x555a60, GOG = 0xff3b1f, i, sx, sz, tk = [];
-	foeMat = new THREE.MeshLambertMaterial({ vertexColors: true });
-	canopyMat = new THREE.MeshLambertMaterial({ color: 0xd4202c, side: THREE.DoubleSide });
+// PAL: the colors of the enemies. Look 0: black suits with red. Look 1: white suits, white vehicles.
+var PAL = [
+	{ suit: 0x15171b, leg: 0x1b1e23, head: 0x0d0d0f, mark: 0xc8102e, gun: 0x555a60, gog: 0xff3b1f, ski: 0x101010, sled: 0xc8102e, low: 0x0d0d0f, truck: 0x3c4148, glass: 0x16222e, heli: 0x1c1f24, hglass: 0x27425e, plane: 0xe9e4d8, canopy: 0xd4202c },
+	{ suit: 0xdde1e5, leg: 0xd0d5da, head: 0xe6e9ec, mark: 0xa9b1b8, gun: 0x2a2d32, gog: 0x15181b, ski: 0xb9c0c6, sled: 0xe4e8eb, low: 0x8f979e, truck: 0xe0e4e8, glass: 0x2a333b, heli: 0xc7cdd2, hglass: 0x3a4650, plane: 0xe9ecef, canopy: 0xdde1e4 }
+];
+var foeSets = [];
+
+function setChaseTheme(n) {
+	foeGeo = foeSets[n];
+	canopyMat.color.setHex(PAL[n].canopy);
+}
+
+function makeFoeModels(P) {
+	var foeGeo = {}, BLK = P.suit, DRK = P.head, RED = P.mark, GUN = P.gun, GOG = P.gog, i, sx, sz, tk = [];
 
 	// All models look to -z. The origin of the ground models is on the snow.
 	foeGeo.skier = partsGeo([
-		['b', 0.09, 0.03, 1.7, -0.14, 0.015, -0.1, 0x101010], ['b', 0.09, 0.03, 1.7, 0.14, 0.015, -0.1, 0x101010],
-		['b', 0.15, 0.5, 0.17, -0.13, 0.3, 0.03, 0x1b1e23, 0.25], ['b', 0.15, 0.5, 0.17, 0.13, 0.3, 0.03, 0x1b1e23, 0.25],
-		['b', 0.4, 0.36, 0.28, 0, 0.68, 0.06, 0x1b1e23],
+		['b', 0.09, 0.03, 1.7, -0.14, 0.015, -0.1, P.ski], ['b', 0.09, 0.03, 1.7, 0.14, 0.015, -0.1, P.ski],
+		['b', 0.15, 0.5, 0.17, -0.13, 0.3, 0.03, P.leg, 0.25], ['b', 0.15, 0.5, 0.17, 0.13, 0.3, 0.03, P.leg, 0.25],
+		['b', 0.4, 0.36, 0.28, 0, 0.68, 0.06, P.leg],
 		['b', 0.44, 0.6, 0.27, 0, 1.12, -0.07, BLK, -0.3],
 		['b', 0.23, 0.24, 0.24, 0, 1.56, -0.2, DRK], ['b', 0.2, 0.08, 0.04, 0, 1.58, -0.33, GOG],
 		['b', 0.11, 0.11, 0.6, 0.27, 1.25, -0.42, BLK], ['b', 0.05, 0.12, 0.34, 0.27, 1.3, -0.82, GUN],
@@ -190,13 +200,13 @@ function makeFoeModels() {
 	]);
 	// guard: stands, no skis, a rifle in two hands
 	foeGeo.guard = partsGeo([
-		['b', 0.16, 0.8, 0.18, -0.12, 0.4, 0, 0x1b1e23], ['b', 0.16, 0.8, 0.18, 0.12, 0.4, 0, 0x1b1e23],
+		['b', 0.16, 0.8, 0.18, -0.12, 0.4, 0, P.leg], ['b', 0.16, 0.8, 0.18, 0.12, 0.4, 0, P.leg],
 		['b', 0.46, 0.65, 0.27, 0, 1.12, 0, BLK], ['b', 0.23, 0.24, 0.24, 0, 1.6, 0, DRK], ['b', 0.2, 0.08, 0.04, 0, 1.62, -0.13, GOG],
 		['b', 0.1, 0.1, 0.5, 0.25, 1.2, -0.25, BLK], ['b', 0.1, 0.1, 0.5, -0.25, 1.2, -0.25, BLK], ['b', 0.06, 0.1, 0.9, 0, 1.22, -0.55, GUN],
 		['b', 0.47, 0.2, 0.28, 0, 1.3, 0, RED]
 	]);
 	foeGeo.sled = partsGeo([
-		['b', 0.95, 0.4, 2.3, 0, 0.5, 0, RED], ['b', 0.85, 0.3, 0.8, 0, 0.62, -1.25, RED, 0.35], ['b', 0.7, 0.42, 0.06, 0, 1.0, -0.75, 0x1d2b3a, -0.45],
+		['b', 0.95, 0.4, 2.3, 0, 0.5, 0, P.sled], ['b', 0.85, 0.3, 0.8, 0, 0.62, -1.25, P.sled, 0.35], ['b', 0.7, 0.42, 0.06, 0, 1.0, -0.75, P.glass, -0.45],
 		['b', 0.13, 0.05, 1.2, -0.5, 0.03, -1.05, 0x111111], ['b', 0.13, 0.05, 1.2, 0.5, 0.03, -1.05, 0x111111],
 		['b', 0.55, 0.3, 1.5, 0, 0.16, 0.45, DRK], ['b', 0.6, 0.14, 1.0, 0, 0.78, 0.45, 0x151515],
 		['b', 0.42, 0.6, 0.27, 0, 1.25, 0.25, BLK, -0.35], ['b', 0.23, 0.24, 0.24, 0, 1.68, 0.08, DRK], ['b', 0.2, 0.08, 0.04, 0, 1.7, -0.05, GOG],
@@ -204,8 +214,8 @@ function makeFoeModels() {
 	]);
 	// truck: a box-shaped 4x4 with a triangular track unit in the position of each wheel
 	tk = [
-		['b', 2.3, 0.9, 4.8, 0, 1.5, 0, 0x3c4148], ['b', 2.1, 0.8, 2.6, 0, 2.35, 0.3, 0x3c4148],
-		['b', 1.9, 0.55, 0.06, 0, 2.37, -1.02, 0x16222e, -0.2], ['b', 0.06, 0.5, 2.0, -1.06, 2.37, 0.3, 0x16222e], ['b', 0.06, 0.5, 2.0, 1.06, 2.37, 0.3, 0x16222e],
+		['b', 2.3, 0.9, 4.8, 0, 1.5, 0, P.truck], ['b', 2.1, 0.8, 2.6, 0, 2.35, 0.3, P.truck],
+		['b', 1.9, 0.55, 0.06, 0, 2.37, -1.02, P.glass, -0.2], ['b', 0.06, 0.5, 2.0, -1.06, 2.37, 0.3, P.glass], ['b', 0.06, 0.5, 2.0, 1.06, 2.37, 0.3, P.glass],
 		['b', 2.1, 0.25, 0.3, 0, 1.2, -2.45, 0x1a1c1f], ['b', 0.3, 0.2, 0.08, -0.8, 1.65, -2.42, 0xffe9a0], ['b', 0.3, 0.2, 0.08, 0.8, 1.65, -2.42, 0xffe9a0],
 		['b', 2.3, 0.12, 0.9, 0, 2.0, 1.95, RED],
 		['b', 0.45, 0.6, 0.3, 0, 3.05, 0.6, BLK], ['b', 0.23, 0.24, 0.24, 0, 3.5, 0.6, DRK], ['b', 0.2, 0.08, 0.04, 0, 3.52, 0.47, GOG], ['b', 0.08, 0.1, 1.0, 0, 3.1, -0.1, GUN]
@@ -218,8 +228,8 @@ function makeFoeModels() {
 	foeGeo.truck = partsGeo(tk);
 	// The origin of the air models is the center of the body.
 	foeGeo.heli = partsGeo([
-		['b', 1.9, 1.9, 3.4, 0, 0, 0, 0x1c1f24], ['b', 1.6, 1.3, 1.4, 0, -0.15, -2.2, 0x1c1f24, 0.25], ['b', 1.5, 0.9, 0.9, 0, 0.3, -1.9, 0x27425e, 0.5],
-		['b', 0.4, 0.45, 4.6, 0, 0.45, 3.9, 0x1c1f24], ['b', 0.12, 1.5, 0.8, 0, 1.1, 5.9, RED], ['b', 1.6, 0.1, 0.6, 0, 0.5, 5.6, 0x1c1f24],
+		['b', 1.9, 1.9, 3.4, 0, 0, 0, P.heli], ['b', 1.6, 1.3, 1.4, 0, -0.15, -2.2, P.heli, 0.25], ['b', 1.5, 0.9, 0.9, 0, 0.3, -1.9, P.hglass, 0.5],
+		['b', 0.4, 0.45, 4.6, 0, 0.45, 3.9, P.heli], ['b', 0.12, 1.5, 0.8, 0, 1.1, 5.9, RED], ['b', 1.6, 0.1, 0.6, 0, 0.5, 5.6, P.heli],
 		['b', 0.6, 0.5, 1.4, 0, 1.15, 0, 0x2a2e34], ['b', 0.14, 0.5, 0.14, 0, 1.5, 0, GUN],
 		['b', 0.1, 0.1, 3.2, -0.95, -1.45, -0.2, GUN], ['b', 0.1, 0.1, 3.2, 0.95, -1.45, -0.2, GUN],
 		['b', 0.08, 0.6, 0.08, -0.9, -1.15, -1.0, GUN], ['b', 0.08, 0.6, 0.08, 0.9, -1.15, -1.0, GUN], ['b', 0.08, 0.6, 0.08, -0.9, -1.15, 0.7, GUN], ['b', 0.08, 0.6, 0.08, 0.9, -1.15, 0.7, GUN],
@@ -227,9 +237,9 @@ function makeFoeModels() {
 	]);
 	foeGeo.rotor = partsGeo([['b', 10.5, 0.06, 0.36, 0, 0, 0, BLK], ['b', 0.36, 0.06, 10.5, 0, 0, 0, BLK]]);
 	foeGeo.plane = partsGeo([
-		['b', 1.15, 1.2, 5.6, 0, 0, 0, 0xe9e4d8], ['b', 0.9, 0.9, 1.0, 0, -0.05, -3.2, RED], ['b', 1.1, 0.6, 1.3, 0, 0.45, -1.2, 0x1d2b3a],
-		['b', 10.4, 0.14, 1.5, 0, 0.75, -0.9, 0xe9e4d8], ['b', 1.2, 0.15, 1.52, -4.6, 0.75, -0.9, RED], ['b', 1.2, 0.15, 1.52, 4.6, 0.75, -0.9, RED],
-		['b', 3.4, 0.1, 0.95, 0, 0.15, 2.6, 0xe9e4d8], ['b', 0.12, 1.3, 1.0, 0, 0.8, 2.6, RED],
+		['b', 1.15, 1.2, 5.6, 0, 0, 0, P.plane], ['b', 0.9, 0.9, 1.0, 0, -0.05, -3.2, RED], ['b', 1.1, 0.6, 1.3, 0, 0.45, -1.2, P.glass],
+		['b', 10.4, 0.14, 1.5, 0, 0.75, -0.9, P.plane], ['b', 1.2, 0.15, 1.52, -4.6, 0.75, -0.9, RED], ['b', 1.2, 0.15, 1.52, 4.6, 0.75, -0.9, RED],
+		['b', 3.4, 0.1, 0.95, 0, 0.15, 2.6, P.plane], ['b', 0.12, 1.3, 1.0, 0, 0.8, 2.6, RED],
 		['b', 0.1, 0.9, 0.1, -0.8, -0.95, -1.2, GUN], ['b', 0.1, 0.9, 0.1, 0.8, -0.95, -1.2, GUN],
 		['b', 0.25, 0.06, 1.4, -0.8, -1.4, -1.2, 0x333333], ['b', 0.25, 0.06, 1.4, 0.8, -1.4, -1.2, 0x333333]
 	]);
@@ -249,6 +259,7 @@ function makeFoeModels() {
 		['b', 3.2, 3, 3.2, 0, 1.5, 0, 0x7d858c], ['c', 0.2, 0.3, 2.4, 0, 4.2, 0, 0x4a4f55],
 		['c', 2.6, 0.5, 1.0, 0, 5.6, -0.6, 0xe8ecef, 1.1, 0, 0, 12], ['b', 0.1, 0.1, 1.6, 0, 5.9, -1.4, 0x4a4f55, 1.1 - Math.PI / 2, 0, 0]
 	]);
+	return foeGeo;
 }
 
 function makeChase(scene) {
@@ -286,10 +297,13 @@ function makeChase(scene) {
 		grens.push({ mesh: m, ring: g, on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, fuse: 0, mine: false, landed: false });
 	}
 	// green light: the position where you must stop
-	beam = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, 70, 20, 1, true), new THREE.MeshBasicMaterial({ color: 0x30ff70, transparent: true, opacity: 0.22, side: THREE.DoubleSide, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+	beam = new THREE.Mesh(new THREE.CylinderGeometry(30, 30, 70, 32, 1, true), new THREE.MeshBasicMaterial({ color: 0x30ff70, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
 	beam.visible = false;
 	scene.add(beam);
-	makeFoeModels();
+	foeMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+	canopyMat = new THREE.MeshLambertMaterial({ color: 0xd4202c, side: THREE.DoubleSide });
+	foeSets.push(makeFoeModels(PAL[0]), makeFoeModels(PAL[1]));
+	foeGeo = foeSets[0];
 }
 
 // ---------- hits ----------
@@ -481,7 +495,7 @@ function strafe(f, x, z, dmg) {
 // ---------- spawn ----------
 
 function spawnFoe(type) {
-	var def = FOE[type], side = Math.random() < 0.5 ? -1 : 1, m, W = widthAt(sk.t), lat = Math.min(W - 3, 26), r = Math.random();
+	var def = FOE[type], side = Math.random() < 0.5 ? -1 : 1, m, r = Math.random();
 	var f = {
 		type: type, def: def, hp: def.hp, dead: 0, phase: Math.random() * 6.28,
 		fireT: 1.5 + Math.random() * 2, grenT: type == 'skier' && Math.random() < 0.3 || type == 'sled' && Math.random() < 0.4 ? 3 + Math.random() * 4 : 1e9,
@@ -490,18 +504,18 @@ function spawnFoe(type) {
 		burst: 0, burstT: 0, bx: 0, bz: 0, ex: 0, ez: 0, hitDone: false, lineD: 0, lined: false, pass: 0, ramT: -9, smokeT: 0, comp: -1
 	};
 	if (type == 'skier' || type == 'sled') {
-		if (r < 0.5) { f.te = sk.t - 45 - Math.random() * 40; f.de = clamp(sk.d + side * (4 + Math.random() * 14), -lat, lat); }       // from behind
-		else if (r < 0.8 || type == 'sled') { f.te = sk.t + 150 + Math.random() * 60; f.de = side * (widthAt(sk.t + 170) - 3); }     // from the side, in front of you
-		else { f.te = sk.t + 200 + Math.random() * 80; f.de = (Math.random() - 0.5) * 1.4 * (widthAt(f.te) - 4); f.wait = true; }     // waits for you on the piste
+		if (r < 0.5) { f.te = sk.t - 45 - Math.random() * 40; f.de = sk.d + side * (4 + Math.random() * 14); }       // from behind
+		else if (r < 0.8 || type == 'sled') { f.te = sk.t + 150 + Math.random() * 60; f.de = sk.d + side * (45 + Math.random() * 45); }     // from the side, in front of you
+		else { f.te = sk.t + 200 + Math.random() * 80; f.de = sk.d + (Math.random() - 0.5) * 90; f.wait = true; }     // waits for you, in your way
 		f.slotT = type == 'skier' ? -10 + Math.random() * 48 : -8 + Math.random() * 34;
 		f.slotD = side * (4 + Math.random() * 18);
 		m = new THREE.Mesh(foeGeo[type], foeMat);
 	} else if (type == 'truck') {
-		f.te = sk.t + 250 + Math.random() * 70; f.de = side * 18;
+		f.te = sk.t + 250 + Math.random() * 70; f.de = sk.d + side * 18;
 		f.slotT = 22 + Math.random() * 24; f.slotD = side * (9 + Math.random() * 9);
 		m = new THREE.Mesh(foeGeo.truck, foeMat);
 	} else if (type == 'chute') {
-		f.te = sk.t + 150 + Math.random() * 90; f.de = (Math.random() - 0.5) * Math.min(60, 1.6 * W);
+		f.te = sk.t + 150 + Math.random() * 90; f.de = sk.d + (Math.random() - 0.5) * 60;
 		f.slotT = 4 + Math.random() * 30; f.slotD = side * (4 + Math.random() * 16);
 		f.alt = 55 + Math.random() * 40; f.air = true;
 		m = new THREE.Mesh(foeGeo.skier, foeMat);
@@ -516,13 +530,13 @@ function spawnFoe(type) {
 		f.part2 = new THREE.Mesh(foeGeo.prop, foeMat); f.part2.position.set(0.25, 1.1, 5.9); f.part2.rotation.y = Math.PI / 2; m.add(f.part2);
 		f.fireT = 4;
 	} else if (type == 'plane') {
-		f.te = sk.t + 800; f.de = 0; f.alt = 75;
+		f.te = sk.t + 800; f.de = sk.d; f.alt = 75;
 		m = new THREE.Mesh(foeGeo.plane, foeMat);
 		f.part = new THREE.Mesh(foeGeo.prop, foeMat); f.part.position.set(0, -0.05, -3.75); m.add(f.part);
 	} else {
 		m = new THREE.Mesh(foeGeo.guard, foeMat);     // guard: makeBase sets the position
 	}
-	if (f.te) { f.x = pisteX(f.te) + f.de; f.z = Z0 - f.te; f.y = groundAt(f.x, f.z) + f.alt; }
+	if (f.te) { f.de = sideLimit(f.te, f.de, def.wide || 0.5); f.x = pisteX(f.te) + f.de; f.z = Z0 - f.te; f.y = groundAt(f.x, f.z) + f.alt; }
 	m.rotation.order = 'YXZ';
 	m.position.set(f.x, f.y, f.z);
 	f.mesh = m;
@@ -546,6 +560,16 @@ function clearFoes(all) {
 
 var FOB = {};
 
+// sideLimit keeps an enemy on the face. In the gully section it stays in the gully if you are in it, or on your side of it.
+function sideLimit(te, de, wide) {
+	var i = tIndex(te), S = PS[i] + 40, g;
+	if (PWALL[i] > 0.5) {
+		if (Math.abs(sk.d) < 50) { g = PGUL[i] - 1.5 - wide; return clamp(de, -g, g); }
+		return sk.d > 0 ? clamp(de, 70, S) : clamp(de, -S, -70);
+	}
+	return clamp(de, -S, S);
+}
+
 // foeBlocked: is there a tree, rock, ice block or house at the position of this enemy? It returns the x direction to go away from it, or 0.
 function foeBlocked(f, x, z) {
 	var ci = Math.floor(x / TC), cj = Math.floor(z / TC), i, j, dx, dz, r, h;
@@ -568,7 +592,7 @@ function foeBlocked(f, x, z) {
 
 // Enemies on the snow: skier, snowmobile, truck, and a parachute skier after the landing.
 function updateGround(f, dt) {
-	var def = f.def, tt, td, nx, ny, nz, dx, dz, mv, dist, i = tIndex(f.te), W = PW[i], lat = W - 2 - def.wide, side, T, tx, tz;
+	var def = f.def, tt, td, nx, ny, nz, dx, dz, mv, dist, i = tIndex(f.te), side, T, tx, tz;
 	if (f.dead > 0) {
 		f.vt = Math.max(0, f.vt - (f.type == 'truck' ? 14 : 9) * dt);
 	} else if (f.wait) {
@@ -577,12 +601,11 @@ function updateGround(f, dt) {
 		if (sk.t > f.te - 25) { f.wait = false; f.vt = Math.max(0, -sk.vz * 0.7); }
 	} else {
 		tt = sk.t + f.slotT + 5 * Math.sin(chaseTime * 0.6 + f.phase);
-		td = clamp(sk.d + f.slotD + 4 * Math.sin(chaseTime * 0.9 + f.phase * 1.7), -lat, lat);
+		td = sideLimit(f.te, sk.d + f.slotD + 4 * Math.sin(chaseTime * 0.9 + f.phase * 1.7), def.wide);
 		f.vt = clamp(-sk.vz + (tt - f.te) * 0.8, 0, def.vmax);
-		// a truck cannot go into the gully, between the trees or between the crevasses
-		if (f.type == 'truck' && (W < 40 || PGLADE[tIndex(f.te + 30)] > 0.05 || PICE[i] > 0.5)) f.vt = 0;
-		f.de += clamp(td - f.de, -6, 6) * dt;
-		f.de = clamp(f.de, -lat, lat);
+		// a truck cannot go into the gully section, between the trees or between the crevasses
+		if (f.type == 'truck' && (PWALL[i] > 0.05 || PTREE[tIndex(f.te + 30)] > 0.05 || PICE[i] > 0.5)) f.vt = 0;
+		f.de += clamp(td - f.de, -7, 7) * dt;
 	}
 	f.te += f.vt * dt;
 	nx = pisteX(f.te) + f.de; nz = Z0 - f.te; ny = groundAt(nx, nz);
@@ -672,7 +695,7 @@ function updateChute(f, dt) {
 		f.air = false; f.alt = 0;
 		if (f.part) { chaseScene.remove(f.part); f.part = null; }
 		if (f.dead > 0) snowBurst(f.x, f.y, f.z, 8, 5);
-		else { f.hdg = pisteDir(f.te); f.vt = -sk.vz * 0.8; f.de = clamp(f.de, -widthAt(f.te) + 3, widthAt(f.te) - 3); }
+		else { f.hdg = pisteDir(f.te); f.vt = -sk.vz * 0.8; }
 		return;
 	}
 	if (f.dead > 0 || chase.down > 0) return;
@@ -700,12 +723,12 @@ function fallAir(f, dt, spin) {
 }
 
 function updateHeli(f, dt) {
-	var tx, ty, tz, k, dx, dz, dist, px, pz, l, u, W = widthAt(sk.t + 80);
+	var tx, ty, tz, k, dx, dz, dist, px, pz, l, u;
 	f.part.rotation.y += 32 * dt; f.part2.rotation.x += 50 * dt;
 	if (f.dead > 0) return fallAir(f, dt, 5);
-	// position: in front of you, to the left or right of the piste, 30 m above the snow
-	tx = pisteX(sk.t + 80) + Math.min(38, W + 12) * Math.sin(chaseTime * 0.22 + f.phase); tz = Z0 - (sk.t + 80);
-	ty = groundAt(tx, tz) + (W < 25 ? 45 : 30) + 5 * Math.sin(chaseTime * 0.5);
+	// position: in front of you, to your left or right, 30 m above the snow
+	tx = pisteX(sk.t + 80) + sk.d + 38 * Math.sin(chaseTime * 0.22 + f.phase); tz = Z0 - (sk.t + 80);
+	ty = groundAt(tx, tz) + (inGully(sk.t + 80, sk.d) ? 60 : 30) + 5 * Math.sin(chaseTime * 0.5);
 	k = 1 - Math.exp(-dt * 0.9);
 	dx = (tx - f.x) * k; dz = (tz - f.z) * k;
 	f.vt = Math.sqrt(dx * dx + dz * dz) / dt; f.hdg = Math.atan2(-dx, -dz);
@@ -741,10 +764,10 @@ function updatePlane(f, dt) {
 	var gap, ti, wantAlt;
 	f.part.rotation.z += 60 * dt;
 	if (f.dead > 0) return fallAir(f, dt, 1.5);
-	// it flies up the piste, to you, then goes over you
+	// it flies up the mountain, to you, then goes over you
 	f.te -= 52 * dt;
 	gap = f.te - sk.t;
-	if (gap < 380 && !f.lined) { f.lined = true; f.lineD = clamp(sk.d, -widthAt(sk.t), widthAt(sk.t)); f.hitDone = false; }
+	if (gap < 380 && !f.lined) { f.lined = true; f.lineD = sk.d; f.hitDone = false; }
 	if (f.lined) f.de += clamp(f.lineD - f.de, -12, 12) * dt;
 	wantAlt = gap > 500 ? 75 : gap > -80 ? 26 : 90;
 	f.alt += clamp(wantAlt - f.alt, -22, 22) * dt;
@@ -754,7 +777,7 @@ function updatePlane(f, dt) {
 	f.mesh.rotation.set(0, f.hdg, 0.15 * Math.sin(chaseTime * 0.8));
 	if (f.hp < 4 && Math.random() < 0.3) puff(fxSmoke, f.x, f.y, f.z, 0, 1, 0, 1.5);
 
-	// fire: a line of bullets down the piste, at the side position that you had when it started
+	// fire: a line of bullets down the mountain, at the side position that you had when it started
 	if (f.lined && gap < 330 && gap > 60 && chase.down == 0) {
 		f.burstT -= dt;
 		if (f.burstT < 0) {
@@ -766,7 +789,7 @@ function updatePlane(f, dt) {
 	if (gap < -450) {
 		f.pass++; f.lined = false;
 		if (f.pass >= 3) return true;
-		f.te = sk.t + 850; f.de = 0; f.alt = 75;
+		f.te = sk.t + 850; f.de = sk.d; f.alt = 75;
 	}
 	return false;
 }
@@ -847,7 +870,7 @@ function countProps(comp) { var n = 0, i; for (i = 0; i < props.length; i++) if 
 
 // The director keeps a number of enemies around you at all times. The number comes from the heat and the difficulty.
 function updateDirector(dt) {
-	var D = DIFF[chase.diff], heat = chase.heat, i, n = 0, nHeli = 0, nPlane = 0, nTruck = 0, r, type, k = tIndex(sk.t), W = PW[k], k2 = tIndex(sk.t + 280), truckOk;
+	var D = DIFF[chase.diff], heat = chase.heat, i, n = 0, nHeli = 0, nPlane = 0, nTruck = 0, r, type, k = tIndex(sk.t), gully = inGully(sk.t, sk.d), k2 = tIndex(sk.t + 280), truckOk;
 	for (i = 0; i < foes.length; i++) {
 		if (foes[i].dead > 0) continue;
 		type = foes[i].type;
@@ -860,18 +883,18 @@ function updateDirector(dt) {
 	if (n < Math.round(D.n * heat) && chase.spawnT <= 0) {
 		chase.spawnT = (1.0 + Math.random() * 1.2) / Math.max(heat, 0.5) * D.wait;
 		r = Math.random();
-		if (W < 25) type = r < 0.85 ? 'skier' : 'chute';                                   // gully
-		else if (PGLADE[k] > 0.05) type = r < 0.65 ? 'skier' : r < 0.85 ? 'sled' : 'chute';   // trees
+		if (gully) type = r < 0.85 ? 'skier' : 'chute';                                   // gully
+		else if (PTREE[k] > 0.05) type = r < 0.65 ? 'skier' : r < 0.85 ? 'sled' : 'chute';   // trees
 		else if (PICE[k] > 0.5) type = r < 0.5 ? 'skier' : r < 0.85 ? 'sled' : 'chute';       // glacier
 		else {
-			truckOk = nTruck < 3 && PW[k2] > 40 && PGLADE[k2] < 0.05 && PICE[k2] < 0.5;     // a truck needs a wide, open piste
+			truckOk = nTruck < 3 && PWALL[k2] < 0.05 && PWALL[k] < 0.05 && PTREE[k2] < 0.05 && PICE[k2] < 0.5;     // a truck needs open snow with no trees
 			type = r < 0.45 ? 'skier' : r < 0.7 ? 'sled' : r < 0.82 ? 'chute' : truckOk ? 'truck' : 'skier';
 		}
 		spawnFoe(type);
 	}
 	chase.heliT -= dt * heat; chase.planeT -= dt * heat;
 	if (chase.heliT < 0 && nHeli < (chase.diff == 2 ? 2 : 1)) { chase.heliT = 50 + Math.random() * 25; spawnFoe('heli'); chase.msg = 'HELICOPTER'; chase.msgTime = chaseTime; }
-	if (chase.planeT < 0 && nPlane == 0 && W > 40) { chase.planeT = 65 + Math.random() * 30; spawnFoe('plane'); chase.msg = 'AIRPLANE'; chase.msgTime = chaseTime; }
+	if (chase.planeT < 0 && nPlane == 0 && !gully) { chase.planeT = 65 + Math.random() * 30; spawnFoe('plane'); chase.msg = 'AIRPLANE'; chase.msgTime = chaseTime; }
 }
 
 // ---------- mission ----------
@@ -895,7 +918,7 @@ function updateMission(dt) {
 	else if (s.k == 'stop') {
 		x = pisteX(c.over + 2); z = Z0 - c.over - 2;
 		beam.visible = true; beam.position.set(x, groundAt(x, z) + 30, z);
-		if (Math.abs(sk.t - c.over - 2) < 10 && Math.abs(sk.d) < 12 && sk.speed < 1.2) { next = true; addScore(500, 'IN POSITION'); }
+		if (Math.abs(sk.t - c.over - 2) < 10 && Math.abs(sk.d) < 32 && sk.speed < 1.2) { next = true; addScore(500, 'IN POSITION'); }
 		if (sk.t > c.over + 45) { chase.stage++; next = true; alarm(s.comp, 0); }     // you went past it: no sniper stage
 	} else if (s.k == 'snipe') {
 		chase.left = countGuards(s.comp);

@@ -11,7 +11,7 @@
 //     A hard turn goes above the limit: you slide sideways and lose speed (skid).
 //   - Flat skis turn slowly into the fall line.
 //   - If the snow drops away faster than gravity pulls you down, you are in the air.
-//   - Ice has less friction and much less grip. Deep snow off the piste slows you.
+//   - Ice has less friction and much less grip. Open snow is a little slower than the groomed piste.
 //   - If you are almost stopped and do not push, you stay where you are (your edges hold you).
 //   - A crevasse: if you are on the snow when you get to it, you fall in. Jump, or go around it.
 
@@ -77,16 +77,16 @@ function stepSki(dt) {
 		sk.ground = true; sk.air = 0;
 		sp = Math.sqrt(sk.vx * sk.vx + sk.vy * sk.vy + sk.vz * sk.vz);
 		sk.surf = surfaceAt(sk.x, sk.z, sk.t, sk.d);
-		if (sk.surf == 1) { glide *= 0.3; grip *= 0.4; } else if (sk.surf == 2) glide += 0.05;
+		if (sk.surf == 1) { glide *= 0.3; grip *= 0.4; } else if (sk.surf == 2) glide += 0.012;
 
 		// turn
 		w = -ctl.steer * Math.min(P.pivot, P.latAcc / Math.max(sp, 1));
 		g2 = Math.sqrt(n.gx * n.gx + n.gz * n.gz);
 		if (g2 > 0.01) w += P.fall * Math.min(1.5, g2 / 0.25) * Math.sin(wrapPi(Math.atan2(n.gx, n.gz) - sk.hdg)) * (1 - Math.abs(ctl.steer)) * (1 - ctl.brake) * Math.min(1, sp / 3);
 		if (sk.assist) {
-			// easy mode: with no steer input, the skis follow the piste
+			// easy mode: with no steer input, the skis follow the piste. A small steer input stops this help.
 			want = pisteDir(sk.t) + clamp(sk.d / 90, -0.45, 0.45) * sstep(12, 40, Math.abs(sk.d));
-			w += 1.3 * wrapPi(want - sk.hdg) * (1 - Math.abs(ctl.steer)) * Math.min(1, sp / 3);
+			w += 1.3 * wrapPi(want - sk.hdg) * Math.max(0, 1 - 4 * Math.abs(ctl.steer)) * Math.min(1, sp / 3);
 		}
 		if (sk.fallen > 0) w = 0;
 		sk.hdg = wrapPi(sk.hdg + w * dt);

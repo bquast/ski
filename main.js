@@ -12,7 +12,7 @@ var POLE_GAIN = 1.6;        // speed that you get for each meter of pole push (m
 var LEAN_FULL = 0.17;       // body lean to the side for a full turn (m)
 var LEAN_DEAD = 0.015;      // lean below this value does nothing (m)
 var HAND_TILT_FULL = 0.45;  // skis: one hand higher than the other, as a ratio of the hand distance, for a full turn
-var SHOULDER_FULL = 0.55;   // snowboard: angle between your shoulders and the board for a full turn (radians)
+var SHOULDER_FULL = 0.6;    // snowboard: angle between your front arm and the board for a full turn (radians)
 var TUCK_START = 0.92;      // your knees are bent when your head is below this part of your height
 var JUMP_RISE = 0.7;        // jump: your head must go up faster than this (m/s)
 var JUMP_MIN = 2.8;         // jump: speed up from the snow (m/s), minimum and maximum
@@ -29,7 +29,7 @@ var game = {
 	time: 0, runTime: 0, vmax: 0, doneTime: 0, air: 0, jumps: 0,
 	msg: '', msgUntil: 0, result: '',
 	nFall: 0, nLand: 0, nHit: 0, nCrev: 0, respawns: 0, white: 0, sec: -1,
-	lastJump: 0, lastTuck: -9
+	lastJump: 0, lastTuck: -9, steerSrc: ''
 };
 var head = { x: 0, y: 1.7, z: 0, yaw: 0, vy: 0 };
 var cal = { cx: 0, cz: 0, h: 1.7, fwd: 0, pole: 1.15, wait: 0 };   // your standing position, set by B or Y
@@ -60,9 +60,10 @@ var OPTS = [
 	{ key: 'steer', label: 'Steer with', vals: ['BODY + HANDS', 'BODY', 'STICK'] },
 	{ key: 'turn', label: 'View turns', vals: ['WITH THE PISTE', 'NEVER', 'WITH YOU'] },
 	{ key: 'ring', label: 'Comfort ring', vals: ['OFF', 'LIGHT', 'STRONG'] },
-	{ key: 'gun', label: 'Gun hand', vals: ['RIGHT', 'LEFT'] }
+	{ key: 'gun', label: 'Gun hand', vals: ['RIGHT', 'LEFT'] },
+	{ key: 'look', label: 'Look', vals: ['ALPINE', 'SNOW FORTRESS'] }
 ];
-var opt = { gear: 0, game: 0, diff: 1, start: 0, assist: 0, stance: 0, steer: 0, turn: 0, ring: 0, gun: 0 };
+var opt = { gear: 0, game: 0, diff: 1, start: 0, assist: 0, stance: 0, steer: 0, turn: 0, ring: 0, gun: 0, look: 0 };
 
 function loadOptions() {
 	var o, b, i;
@@ -103,6 +104,7 @@ function init() {
 	makeGuns();
 	makeHub();
 	loadOptions();
+	applyLook();
 
 	for (i = 0; i < 2; i++) {
 		c = renderer.xr.getController(i);
@@ -149,6 +151,12 @@ function init() {
 
 	toStart();
 	renderer.setAnimationLoop(frame);
+}
+
+// applyLook sets the look of the world and of the enemies.
+function applyLook() {
+	setTheme(opt.look);
+	setChaseTheme(opt.look);
 }
 
 // ---------- input ----------
@@ -227,7 +235,7 @@ readHands.tip = new THREE.Vector3();
 // readSteer gives the steer input from your body: -1 = left, +1 = right.
 function readSteer() {
 	var a = sk.hdg - rigYaw, fx = -Math.sin(a), fz = -Math.cos(a), rx = Math.cos(a), rz = -Math.sin(a);
-	var L = hands.left, R = hands.right, F, B, raw = 0, lean = 0, dx, dz, sep, both = opt.steer == 0 && !game.spy && L.has && R.has;
+	var L = hands.left, R = hands.right, F, raw = 0, lean = 0, dx, dz, sep, both = opt.steer == 0 && !game.spy && L.has && R.has;
 	if (opt.steer != 2) lean = dead((head.x - cal.cx) * rx + (head.z - cal.cz) * rz, LEAN_DEAD) / LEAN_FULL;
 	if (opt.gear == 0) {
 		raw = lean;
@@ -236,13 +244,18 @@ function readSteer() {
 			dx = R.px - L.px; dz = R.pz - L.pz; sep = dx * rx + dz * rz;
 			if (sep > 0.2) raw -= dead((R.py - L.py) / sep, 0.07) / HAND_TILT_FULL;
 		}
-	} else if (both) {
-		// snowboard: you stand with one side to the front. The line from your rear hand to your front hand is your shoulders.
-		// Shoulders in line with the board = straight. Turn your shoulders = turn. Lean to your toes or heels helps.
-		F = opt.stance ? R : L; B = opt.stance ? L : R;
-		dx = F.px - B.px; dz = F.pz - B.pz;
-		raw = dead(Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz), 0.05) / SHOULDER_FULL + lean * 0.6;
-	} else raw = lean;      // with a weapon in your hands: lean to your toes or heels
+	} else {
+		// snowboard: you stand with one side to the front. Your front arm is the steering:
+		// the direction from your head to your front hand, compared with the board. Arm in line with the board = straight.
+		// Turn your shoulders and the arm turns. The rear hand is not used (the headset cannot always see it).
+		// The lean to your toes or heels helps. If the front hand has a weapon, or is not seen, only the lean steers.
+		F = opt.stance ? R : L;
+		raw = lean; game.steerSrc = 'LEAN';
+		if (opt.steer == 0 && F.has && !(game.spy && (F == hands[opt.gun ? 'left' : 'right'] || gun.two || gun.hold))) {
+			dx = F.px - head.x; dz = F.pz - head.z;
+			if (dx * dx + dz * dz > 0.04) { raw = dead(Math.atan2(dx * rx + dz * rz, dx * fx + dz * fz), 0.07) / SHOULDER_FULL + lean * 0.5; game.steerSrc = 'FRONT ARM'; }
+		}
+	}
 	return raw;
 }
 
@@ -505,8 +518,8 @@ function drawStatus() {
 	if (game.spy) {
 		s = W.name + (W.mag ? '  ' + (gun.reload > 0 ? 'RELOAD' : gun.ammo[gun.w]) : '') + (gun.two && vr ? '  2 HANDS' : '');
 		c.textAlign = 'left'; c.fillText(s, 36, 268);
-		c.textAlign = 'right'; c.fillText('GRENADES ' + gun.gren + '    DOWN ' + chase.kills, 990, 268);
-	} else c.fillText('MAX ' + (game.vmax * 3.6).toFixed(0) + ' km/h      JUMPS ' + game.jumps + '      AIR ' + game.air.toFixed(0) + ' s', 512, 268);
+		c.textAlign = 'right'; c.fillText((opt.gear == 1 && vr ? 'STEER: ' + game.steerSrc + '    ' : '') + 'GRENADES ' + gun.gren + '    DOWN ' + chase.kills, 990, 268, 560);
+	} else c.fillText((opt.gear == 1 && vr ? 'STEER: ' + game.steerSrc + '      ' : '') + 'MAX ' + (game.vmax * 3.6).toFixed(0) + ' km/h      JUMPS ' + game.jumps + '      AIR ' + game.air.toFixed(0) + ' s', 512, 268, 990);
 	statusMesh.material.map.needsUpdate = true;
 }
 
@@ -535,7 +548,7 @@ function drawMenu() {
 	c.textAlign = 'center'; c.fillStyle = '#bcd0e6'; c.font = '29px sans-serif';
 	if (vr) {
 		c.fillText('Stick: select and change.  Trigger: OK.  B or Y: set the center.  A or X: this board.', 512, 880, 990);
-		c.fillText('Lean to turn.  Grips or stick to the rear: brake.  Bend your knees: speed.  Stand up fast: jump.', 512, 922, 990);
+		c.fillText('Skis: lean to turn. Board: front arm steers.  Grips: brake.  Bend your knees: speed.  Stand up fast: jump.', 512, 922, 990);
 		c.fillText('Chase: trigger = fire.  A = next weapon.  Other hand: grip = hold the weapon, trigger = grenade.', 512, 964, 990);
 	} else {
 		c.fillText('Arrow keys: select and change.  ENTER: OK.  M: this board.  N: new run.', 512, 880, 990);
@@ -575,6 +588,7 @@ function menuChange(dx) {
 	if (r == 'START' || r == 'NEW RUN') { startRun(); return; }
 	opt[r.key] = (opt[r.key] + dx + r.vals.length) % r.vals.length;
 	saveOptions();
+	if (r.key == 'look') applyLook();
 	// equipment, game, enemies and start position are for a new run: a change of these stops the run that you have
 	if (r.key == 'gear' || r.key == 'game' || r.key == 'start' || r.key == 'diff') {
 		if (game.paused) { game.paused = false; menu.sel--; }
@@ -680,7 +694,7 @@ function startRun() {
 	game.sec = PSEC[tIndex(sk.t)];
 	viewDir = sk.hdg; rigY = sk.y; acc = 0;
 	if (!vr) say('W: PUSH', 4);
-	else if (opt.gear == 1) say((opt.stance ? 'RIGHT' : 'LEFT') + ' SHOULDER TO THE FRONT.  ' + (game.spy ? 'STICK' : 'TRIGGER') + ': PUSH', 6);
+	else if (opt.gear == 1) say((opt.stance ? 'RIGHT' : 'LEFT') + ' SIDE TO THE FRONT. FRONT ARM STEERS.  ' + (game.spy ? 'STICK' : 'TRIGGER') + ': PUSH', 7);
 	else say(game.spy ? 'PUSH: POLE, OR STICK FORWARD' : 'PUSH WITH YOUR POLES', 5);
 }
 
@@ -752,7 +766,7 @@ function frame(ms, xrFrame) {
 	placeRig(dt);
 	rig.updateMatrixWorld(true);
 	updateGuns(dt);
-	updateWorld(sk.x, sk.z, game.time);
+	updateWorld(sk.x, sk.y, sk.z, game.time);
 	updateGear(dt);
 	updateHub(dt);
 	updateSound(dt);
