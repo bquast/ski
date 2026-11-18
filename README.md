@@ -7,13 +7,15 @@ It is a static site: no build step, no server code. The setup is the same as `ce
 
 | File | Function |
 |---|---|
-| `index.html` | Page, VR button, six script tags |
+| `index.html` | Page, VR button, eight script tags |
 | `three.min.js` | three.js r187, as a classic script (global `THREE`) |
 | `world.js` | Mountain, sections, jumps, crevasses, trees, houses, bases, sky |
 | `ski.js` | Physics of the skis and the snowboard. No drawing. |
 | `chase.js` | Enemies, grenades, targets, the rules of the chase and the mission, effects |
 | `guns.js` | Pistol, machine gun, sniper rifle with scope, your grenades |
-| `main.js` | Setup, input, equipment, hub, sound, frame loop |
+| `copilot.js` | Copilot mode: pairing (QR code or typed code), state, options, files. Includes PeerJS 1.5.5 and qrcode-generator 2.0.4 (MIT). |
+| `photo.js` | 360 photos: capture, storage on the device, gallery, viewer on the page and in VR, ZIP |
+| `main.js` | Setup, input, equipment, hub, sound, copilot state and view, frame loop |
 | `.nojekyll` | Tells GitHub Pages to publish the files as they are |
 
 ## Deploy
@@ -23,6 +25,47 @@ GitHub Pages (classic): Settings > Pages > Deploy from a branch > `master`, fold
 Cloudflare Pages: connect the repo, no build command, output directory `/`.
 
 WebXR needs HTTPS. The two hosts supply it.
+
+## 360 photos
+
+A 360 photo (photosphere) shows the full world around you: 360 degrees across, and from straight up to straight down.
+The photo is taken from the position of your eyes. The hub is not in the photo. Your skis, hands and weapon are.
+
+| | Quest | Mac |
+|---|---|---|
+| Take a photo | Push a thumbstick down (click it), or TAKE PHOTO 360 on the options board | `P`, or TAKE PHOTO 360 |
+| Look at the photos | VIEW PHOTOS on the options board: the photo is around you. Stick left, right: the next photo. Trigger, A or X: close. | PHOTOS 360 (top left), then click a photo. Drag to look around, wheel to zoom, arrow keys for the next photo. |
+| Save as a file | On the page (out of VR): PHOTOS 360, then SAVE, SAVE NEW (ZIP) or SAVE ALL (ZIP). The files go to the Downloads folder of the Quest (Files app). | The same buttons. The files go to the Downloads folder of the Mac. |
+
+- **Format:** JPEG, 4096 x 2048 (option "Photo 360 size": 8192 x 4096). Each photo is approximately 0.5 to 3 MB.
+- **360 tag:** each JPEG has the Google panorama tag (GPano XMP). Google Photos, Facebook and other 360 viewers show it as a 360 photo. The center of the photo is the direction that you looked in.
+- **Storage:** the photos stay in the browser storage of the device (IndexedDB) until you delete them. A reload does not remove them. If you clear the site data of the browser, they are gone: save them as files.
+- **Copilot:** each photo also goes to the connected copilot device (the Mac), with the same quality. The hub of the Quest shows THE COPILOT HAS THE PHOTO when it arrived. On the Mac you can set "save each new photo from the pilot as a file" in the gallery. The Mac can also take a photo on the Quest: TAKE PHOTO 360 in the copilot panel, or `P`.
+- **Time:** a photo stops the game for a short time (approximately 0.2 to 0.5 s on a Quest, more for 8192 x 4096).
+
+## Copilot
+
+A second device (for example your MacBook) sees the game of the Quest and changes the options. It gets the 360 photos.
+
+1. On the Mac, open the game and push **BE COPILOT** (panel at the top right). The Mac shows a QR code.
+2. On the Quest, scan the QR code (Quick Settings > Camera, or the Camera app). The game opens and connects to the Mac.
+3. The Quest keeps the code of the Mac. After a reload, or from a bookmark, it connects again by itself. FORGET THE COPILOT DEVICE (in the panel on the Quest page) stops this.
+
+Or type the code of the Quest on the Mac and push JOIN. The code of the Quest is on the last line of the options board, and in the panel on the page.
+
+On the Mac:
+
+| | |
+|---|---|
+| View of the pilot / outside view | `C` |
+| Option lines | click, or keys `1` to `9` |
+| Take a photo on the Quest | `P` |
+| Make the panel small | `H` |
+| Stop | STOP COPILOT |
+
+The Mac shows the skier, the view of the Quest, the hub, the options board, the enemies, the targets of the bases and the explosions. It does not show bullets and grenades.
+
+How it connects: the free PeerJS cloud server helps the two devices to find each other (a third-party service). After that the data goes directly between the devices with WebRTC. On the same WiFi it stays in your network. `?peer=host:port` in the address uses your own PeerServer.
 
 ## The mountain
 
@@ -157,10 +200,13 @@ If you go past a base and targets remain, you start again at the overlook. In th
 | Grenade | `G` |
 | Options board | `M`. Arrow keys: select and change. `ENTER`: OK. |
 | New run | `N` |
+| 360 photo | `P` |
 
 ## Options
 
-Equipment, Game (FREE RUN, CHASE, MISSION), Enemies, Start (TOP, UPPER BASE, LOWER BASE), Easy skiing, Board stance, Steer with, View turns, Comfort ring (default OFF), Gun hand, Look (ALPINE, SNOW FORTRESS).
+Equipment, Game (FREE RUN, CHASE, MISSION), Enemies, Start (TOP, UPPER BASE, LOWER BASE), Easy skiing, Board stance, Steer with, View turns, Comfort ring (default OFF), Gun hand, Look (ALPINE, SNOW FORTRESS), Photo 360 size.
+
+The options board also has TAKE PHOTO 360 and VIEW PHOTOS.
 
 The options and the best results stay in the browser (`localStorage`).
 
@@ -172,6 +218,7 @@ The options and the best results stay in the browser (`localStorage`).
 - `world.js`, list `SEC`: one line for each section (steepness, open width, gully, moguls, trees, ice, rollers, relief). `groundAt()` has the sizes of the hills. `makeFeatures()` sets the number of jumps. `COMP` is the contents of the two bases. `LOOKS` has the colors, fog and light of each look.
 - `chase.js`: `FOE` (enemy strength and points), `DIFF` (number of enemies, shots each second, damage), `STAGES` (the mission), `PAL` (enemy colors of each look).
 - `guns.js`: `WPN` (rate, damage, accuracy, magazine), `GREN_MAX`, `GREN_TIME`, `SCOPE_FOV`.
+- `photo.js`, top: `PHOTO_W` (photo sizes), `PHOTO_Q` (JPEG quality).
 
 ## Test results
 
@@ -189,6 +236,20 @@ Tested in Node (physics) and in headless desktop Chrome (full game, and the VR i
 | Chase, automatic player 160 m off the line, one kill each 0.8 s | Complete, 2 restarts |
 
 Drawing: approximately 130 000 to 150 000 triangles.
+
+360 photos and copilot (v4), in headless Chrome with a local PeerServer. Not tested on a Quest, and not with the public PeerJS server.
+
+| Test | Result |
+|---|---|
+| Colored boxes in front, right, behind, left and above | Each one at the correct place in the photo, in the page viewer and in the VR viewer |
+| JPEG | 4096 x 2048, GPano tag present, opens in other programs |
+| Storage | The photo is there after a reload |
+| SAVE and SAVE ALL (ZIP) | Correct file names, the ZIP passes a test |
+| QR pairing, Quest reload, STOP and BE COPILOT again, FORGET, typed code, bad code | All correct |
+| State | Same skier position and the same 19 enemies on the Mac |
+| Option from the Mac | The Quest changes the look, the Mac follows |
+| Photo from the Mac (`P`) | The Quest takes it, the Mac gets the same number of bytes, the Quest shows THE COPILOT HAS THE PHOTO |
+| Speed, no 3D load | Pairing 1.5 s, a 3 MB file in 2.3 s |
 
 ## three.js
 

@@ -29,6 +29,7 @@ var chase = {
 	stage: 0, text: '', left: 0    // mission: stage number, objective text, guards or targets that remain
 };
 var chaseTime = 0;
+var foeCount = 0;          // each enemy has a number (the copilot uses it)
 var chaseScene = null;
 
 // hp: damage to destroy. r: hit sphere radius. cy: hit sphere height. fire: seconds between shots (min, max).
@@ -145,6 +146,7 @@ function updateTracers(dt) {
 }
 
 function boom(x, y, z, r) {
+	if (typeof copBoom === 'function') copBoom(x, y, z, r);      // main.js: the copilot also sees it
 	var b = booms[boomNext], i; boomNext = (boomNext + 1) % booms.length;
 	b.mesh.position.set(x, y, z); b.mesh.visible = true; b.t = 0; b.r = r;
 	for (i = 0; i < 10; i++) puff(fxFire, x, y, z, (Math.random() - 0.5) * r * 3, Math.random() * r * 2.5, (Math.random() - 0.5) * r * 3, 0.4 + Math.random() * 0.5);
@@ -381,14 +383,19 @@ function hitProp(p, dmg) {
 	puff(fxFire, p.x, p.y + p.cy, p.z, 0, 2, 0, 0.3);
 	alarm(p.comp, 0);
 	if (p.hp > 0) return;
-	p.dead = true; p.smoke = 14;
+	propDead(p);
 	addScore(p.score, p.name + ' +' + p.score);
-	p.mesh.rotation.z = 0.25; p.mesh.position.y -= 0.6;
-	p.mesh.material = deadMat;
 	explode(p.x, p.y + p.cy, p.z, 13, 14, 45, true);
 }
 
 var deadMat = new THREE.MeshLambertMaterial({ color: 0x1a1a1a });
+
+// propDead: the look of a destroyed target. It burns for 14 s.
+function propDead(p) {
+	p.dead = true; p.smoke = 14;
+	p.mesh.rotation.z = 0.25; p.mesh.position.y -= 0.6;
+	p.mesh.material = deadMat;
+}
 
 // ---------- explosions and grenades ----------
 
@@ -497,7 +504,7 @@ function strafe(f, x, z, dmg) {
 function spawnFoe(type) {
 	var def = FOE[type], side = Math.random() < 0.5 ? -1 : 1, m, r = Math.random();
 	var f = {
-		type: type, def: def, hp: def.hp, dead: 0, phase: Math.random() * 6.28,
+		id: ++foeCount, type: type, def: def, hp: def.hp, dead: 0, phase: Math.random() * 6.28,
 		fireT: 1.5 + Math.random() * 2, grenT: type == 'skier' && Math.random() < 0.3 || type == 'sled' && Math.random() < 0.4 ? 3 + Math.random() * 4 : 1e9,
 		x: 0, y: 0, z: 0, te: 0, de: 0, slotT: 0, slotD: 0, vt: 0,
 		hdg: sk.hdg, pitch: 0, alt: 0, air: false, vy: 0, mesh: null, part: null, part2: null, wait: false, obT: Math.random() * 0.1, hop: 0,
@@ -831,14 +838,23 @@ function addProp(comp, kind, td, name, hp, r, cy, score) {
 }
 
 // makeBases puts the guards and the targets in the two bases.
-function makeBases() {
-	var k, i, c, f, g, x, z;
+// makeProps puts the targets in the two bases (the copilot also uses it)
+function makeProps() {
+	var k, i, c;
 	while (props.length) chaseScene.remove(props.pop().mesh);
 	for (k = 0; k < COMP.length; k++) {
-		c = COMP[k]; baseAlarm[k] = 1e9;
+		c = COMP[k];
 		for (i = 0; i < c.tanks.length; i++) addProp(k, 'tank', c.tanks[i], 'TANK', 10, 2.3, 2.2, 300);
 		addProp(k, 'radar', c.radar, 'RADAR', 20, 2.6, 4, 600);
 		if (c.heli) addProp(k, 'heli', c.heli, 'HELICOPTER', 30, 3.3, 0, 1500);
+	}
+}
+
+function makeBases() {
+	var k, i, c, f, g, x, z;
+	makeProps();
+	for (k = 0; k < COMP.length; k++) {
+		c = COMP[k]; baseAlarm[k] = 1e9;
 		g = c.guards.concat(c.towers);
 		for (i = 0; i < g.length; i++) {
 			f = spawnFoe('guard');

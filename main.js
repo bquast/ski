@@ -1,9 +1,9 @@
-// main.js - setup, input, your equipment, the hub, sound, the frame loop.
-// Classic script. It uses THREE, world.js, ski.js, chase.js and guns.js.
+// main.js - setup, input, your equipment, the hub, sound, the copilot, the frame loop.
+// Classic script. It uses THREE, world.js, ski.js, chase.js, guns.js, copilot.js and photo.js.
 //
 // Order of this file:
 //   numbers that you can change, state, options, setup, input, view, equipment,
-//   hub, sound, game flow, frame loop.
+//   hub, sound, game flow, copilot, frame loop.
 
 // ---------- numbers that you can change ----------
 
@@ -43,8 +43,8 @@ function makeHand() {
 	return {
 		obj: null, src: null, has: false, kit: null, glove: null, pole: null, gripMesh: null,
 		px: 0, py: 0, pz: 0, seen: false, planted: false,
-		trig: 0, grip: 0, sx: 0, sy: 0, bA: false, bB: false,
-		pT: false, pA: false, pB: false
+		trig: 0, grip: 0, sx: 0, sy: 0, bA: false, bB: false, bS: false,
+		pT: false, pA: false, pB: false, pS: false, pX: 0
 	};
 }
 
@@ -61,9 +61,10 @@ var OPTS = [
 	{ key: 'turn', label: 'View turns', vals: ['WITH THE PISTE', 'NEVER', 'WITH YOU'] },
 	{ key: 'ring', label: 'Comfort ring', vals: ['OFF', 'LIGHT', 'STRONG'] },
 	{ key: 'gun', label: 'Gun hand', vals: ['RIGHT', 'LEFT'] },
-	{ key: 'look', label: 'Look', vals: ['ALPINE', 'SNOW FORTRESS'] }
+	{ key: 'look', label: 'Look', vals: ['ALPINE', 'SNOW FORTRESS'] },
+	{ key: 'photo', label: 'Photo 360 size', vals: ['4096 x 2048', '8192 x 4096'] }
 ];
-var opt = { gear: 0, game: 0, diff: 1, start: 0, assist: 0, stance: 0, steer: 0, turn: 0, ring: 0, gun: 0, look: 0 };
+var opt = { gear: 0, game: 0, diff: 1, start: 0, assist: 0, stance: 0, steer: 0, turn: 0, ring: 0, gun: 0, look: 0, photo: 0 };
 
 function loadOptions() {
 	var o, b, i;
@@ -105,6 +106,7 @@ function init() {
 	makeHub();
 	loadOptions();
 	applyLook();
+	photoInit();
 
 	for (i = 0; i < 2; i++) {
 		c = renderer.xr.getController(i);
@@ -123,7 +125,11 @@ function init() {
 	}
 
 	renderer.xr.addEventListener('sessionstart', function () { cal.wait = 0.6; });
-	renderer.xr.addEventListener('sessionend', function () { vr = false; calibrate(); btn.textContent = 'ENTER VR'; });
+	renderer.xr.addEventListener('sessionend', function () {
+		vr = false; calibrate(); btn.textContent = 'ENTER VR';
+		photoVRClose();
+		if (photo.unsaved) toast(photo.unsaved + ' new 360 photos on this device. PHOTOS 360 (top left): save them as files.');
+	});
 	if (navigator.xr && navigator.xr.isSessionSupported) {
 		navigator.xr.isSessionSupported('immersive-vr').then(function (ok) {
 			if (ok) btn.style.display = 'block';
@@ -145,11 +151,16 @@ function init() {
 	window.addEventListener('keydown', onKey);
 	window.addEventListener('keyup', function (e) { keys[e.code] = false; });
 	window.addEventListener('mousemove', function (e) { mouse.x = e.clientX / window.innerWidth * 2 - 1; mouse.y = e.clientY / window.innerHeight * 2 - 1; });
-	window.addEventListener('mousedown', function (e) { if (e.button == 2) mouse.right = true; else mouse.down = true; initAudio(); });
+	window.addEventListener('mousedown', function (e) {
+		initAudio();
+		if (e.target !== renderer.domElement) return;       // a click on the panel or the gallery is not a shot
+		if (e.button == 2) mouse.right = true; else mouse.down = true;
+	});
 	window.addEventListener('mouseup', function (e) { if (e.button == 2) mouse.right = false; else mouse.down = false; });
 	window.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
 	toStart();
+	copilotStart();
 	renderer.setAnimationLoop(frame);
 }
 
@@ -200,7 +211,7 @@ function readHands(dt) {
 	var gunHand = opt.gun ? 'left' : 'right', tip = readHands.tip, back, gy, was;
 	for (i = 0; i < 2; i++) {
 		h = hands[names[i]];
-		h.pT = h.trig > 0.5; h.pA = h.bA; h.pB = h.bB;
+		h.pT = h.trig > 0.5; h.pA = h.bA; h.pB = h.bB; h.pS = h.bS; h.pX = h.sx;
 		h.has = !!(vr && h.obj && h.obj.visible && h.src);
 		gp = h.has ? h.src.gamepad : null;
 		if (gp) {
@@ -208,8 +219,9 @@ function readHands(dt) {
 			h.grip = gp.buttons[1] ? gp.buttons[1].value : 0;
 			h.bA = !!(gp.buttons[4] && gp.buttons[4].pressed);
 			h.bB = !!(gp.buttons[5] && gp.buttons[5].pressed);
+			h.bS = !!(gp.buttons[3] && gp.buttons[3].pressed);      // thumbstick pushed down
 			h.sx = dead(gp.axes[2] || 0, 0.15); h.sy = dead(gp.axes[3] || 0, 0.15);
-		} else { h.trig = h.grip = h.sx = h.sy = 0; h.bA = h.bB = false; }
+		} else { h.trig = h.grip = h.sx = h.sy = 0; h.bA = h.bB = h.bS = false; }
 		if (!h.has) { h.seen = false; h.planted = false; continue; }
 
 		// pole: the tip is in the snow if it is below the surface. A hand that moves to the rear then pushes you forward.
@@ -260,8 +272,15 @@ function readSteer() {
 }
 
 function onKey(e) {
-	keys[e.code] = true;
 	initAudio();
+	if (Copilot.role === 'copilot') {
+		// copilot: C = the view, P = a photo. Keys 1 to 9 (copilot.js) select the option lines.
+		if (e.code == 'KeyC') { cop.view = 1 - cop.view; toast(cop.view ? 'Outside view' : 'View of the pilot'); }
+		else if (e.code == 'KeyP') Copilot.select(ROW_PHOTO);
+		return;
+	}
+	keys[e.code] = true;
+	if (e.code == 'KeyP') { photoTake(0); return; }
 	if (e.code == 'KeyM' || e.code == 'Escape') menuButton();
 	else if (e.code == 'KeyN') startRun();
 	else if (game.state == 'menu') {
@@ -282,8 +301,18 @@ function readInput(dt) {
 	var L = hands.left, R = hands.right, push = readHands(dt), k = 1 - Math.exp(-dt * 10);
 	var G = opt.gun ? L : R, O = opt.gun ? R : L, steer = 0, brake = 0, tuck = 0, sy, m, spyRun = game.spy && game.state == 'run';
 
+	// the photo viewer in VR: stick left, right = the next photo. Trigger, A or X = close.
+	if (photo.vrOn) {
+		if ((L.sx > 0.5 && L.pX <= 0.5) || (R.sx > 0.5 && R.pX <= 0.5)) photoVRStep(1);
+		if ((L.sx < -0.5 && L.pX >= -0.5) || (R.sx < -0.5 && R.pX >= -0.5)) photoVRStep(-1);
+		if ((L.trig > 0.5 && !L.pT) || (R.trig > 0.5 && !R.pT) || (L.bA && !L.pA) || (R.bA && !R.pA)) photoVRClose();
+		ctl.push = 0; ctl.jump = 0;
+		return;
+	}
+
 	// buttons that work in all states. In a chase, the low button of the gun hand selects the next weapon.
 	if ((L.bB && !L.pB) || (R.bB && !R.pB)) { calibrate(); say('CENTER SET', 1.5); }
+	if ((L.bS && !L.pS) || (R.bS && !R.pS)) photoTake(0);        // push a thumbstick down: 360 photo
 	if (spyRun) {
 		if (G.bA && !G.pA) setWeapon((gun.w + 1) % 3);
 		if (O.bA && !O.pA) menuButton();
@@ -461,9 +490,9 @@ var hub = null, statusMesh = null, menuMesh = null, statusCv = null, menuCv = nu
 function makeHub() {
 	hub = new THREE.Group();
 	statusCv = document.createElement('canvas'); statusCv.width = 1024; statusCv.height = 320;
-	menuCv = document.createElement('canvas'); menuCv.width = 1024; menuCv.height = 1024;
+	menuCv = document.createElement('canvas'); menuCv.width = 1024; menuCv.height = 1216;
 	statusMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.47), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(statusCv), transparent: true, depthTest: false, depthWrite: false, fog: false }));
-	menuMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.6), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(menuCv), transparent: true, depthTest: false, depthWrite: false, fog: false }));
+	menuMesh = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 1.9), new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(menuCv), transparent: true, depthTest: false, depthWrite: false, fog: false }));
 	statusMesh.material.map.colorSpace = menuMesh.material.map.colorSpace = THREE.SRGBColorSpace;
 	statusMesh.renderOrder = 30; menuMesh.renderOrder = 31;
 	statusMesh.rotation.x = 0.26;
@@ -481,6 +510,7 @@ function timeText(s) {
 
 function menuRows() {
 	var rows = game.paused ? ['CONTINUE', 'NEW RUN'] : ['START'], i;
+	rows.push('TAKE PHOTO 360', 'VIEW PHOTOS');
 	for (i = 0; i < OPTS.length; i++) rows.push(OPTS[i]);
 	return rows;
 }
@@ -516,29 +546,29 @@ function drawStatus() {
 	// bottom line: weapon, or the numbers of the run
 	c.font = 'bold 40px sans-serif'; c.fillStyle = '#bcd0e6';
 	if (game.spy) {
-		s = W.name + (W.mag ? '  ' + (gun.reload > 0 ? 'RELOAD' : gun.ammo[gun.w]) : '') + (gun.two && vr ? '  2 HANDS' : '');
+		s = W.name + (W.mag ? '  ' + (gun.reload > 0 ? 'RELOAD' : gun.ammo[gun.w]) : '') + (gun.two && pilotVR() ? '  2 HANDS' : '');
 		c.textAlign = 'left'; c.fillText(s, 36, 268);
-		c.textAlign = 'right'; c.fillText((opt.gear == 1 && vr ? 'STEER: ' + game.steerSrc + '    ' : '') + 'GRENADES ' + gun.gren + '    DOWN ' + chase.kills, 990, 268, 560);
-	} else c.fillText((opt.gear == 1 && vr ? 'STEER: ' + game.steerSrc + '      ' : '') + 'MAX ' + (game.vmax * 3.6).toFixed(0) + ' km/h      JUMPS ' + game.jumps + '      AIR ' + game.air.toFixed(0) + ' s', 512, 268, 990);
+		c.textAlign = 'right'; c.fillText((opt.gear == 1 && pilotVR() ? 'STEER: ' + game.steerSrc + '    ' : '') + 'GRENADES ' + gun.gren + '    DOWN ' + chase.kills, 990, 268, 560);
+	} else c.fillText((opt.gear == 1 && pilotVR() ? 'STEER: ' + game.steerSrc + '      ' : '') + 'MAX ' + (game.vmax * 3.6).toFixed(0) + ' km/h      JUMPS ' + game.jumps + '      AIR ' + game.air.toFixed(0) + ' s', 512, 268, 990);
 	statusMesh.material.map.needsUpdate = true;
 }
 
 function drawMenu() {
-	var c = menuCv.getContext('2d'), rows = menuRows(), i, y, r, key, v;
-	key = menu.sel + JSON.stringify(opt) + game.paused + game.result + vr;
+	var c = menuCv.getContext('2d'), rows = menuRows(), i, y, r, key, v, inVR = pilotVR();
+	key = menu.sel + JSON.stringify(opt) + game.paused + game.result + inVR + photo.list.length + Copilot.status + Copilot.copilots;
 	if (key == menuKey) return;
 	menuKey = key;
-	c.clearRect(0, 0, 1024, 1024);
-	c.fillStyle = 'rgba(8,18,32,0.86)'; c.fillRect(0, 0, 1024, 1024);
+	c.clearRect(0, 0, 1024, 1216);
+	c.fillStyle = 'rgba(8,18,32,0.86)'; c.fillRect(0, 0, 1024, 1216);
 	c.textBaseline = 'middle'; c.textAlign = 'center';
 	c.fillStyle = '#ffffff'; c.font = 'bold 64px sans-serif'; c.fillText('SKI', 512, 54);
 	if (game.result) { c.fillStyle = '#ffd24a'; c.font = 'bold 40px sans-serif'; c.fillText(game.result, 512, 112, 980); }
 	for (i = 0; i < rows.length; i++) {
-		y = 172 + i * 54; r = rows[i];
+		y = 166 + i * 52; r = rows[i];
 		if (i == menu.sel) { c.fillStyle = 'rgba(255,210,74,0.9)'; c.fillRect(40, y - 25, 944, 50); }
 		c.fillStyle = i == menu.sel ? '#081220' : '#ffffff';
 		c.font = 'bold 40px sans-serif';
-		if (typeof r == 'string') { c.textAlign = 'center'; c.fillText(r, 512, y); }
+		if (typeof r == 'string') { c.textAlign = 'center'; c.fillText(r + (r == 'VIEW PHOTOS' ? '  (' + photo.list.length + ')' : ''), 512, y); }
 		else {
 			v = r.key == 'start' && opt.game == 2 ? 'TOP' : r.vals[opt[r.key]];
 			c.textAlign = 'left'; c.fillText(r.label, 70, y);
@@ -546,22 +576,27 @@ function drawMenu() {
 		}
 	}
 	c.textAlign = 'center'; c.fillStyle = '#bcd0e6'; c.font = '29px sans-serif';
-	if (vr) {
-		c.fillText('Stick: select and change.  Trigger: OK.  B or Y: set the center.  A or X: this board.', 512, 880, 990);
-		c.fillText('Skis: lean to turn. Board: front arm steers.  Grips: brake.  Bend your knees: speed.  Stand up fast: jump.', 512, 922, 990);
-		c.fillText('Chase: trigger = fire.  A = next weapon.  Other hand: grip = hold the weapon, trigger = grenade.', 512, 964, 990);
+	if (inVR) {
+		c.fillText('Stick: select and change.  Trigger: OK.  B or Y: set the center.  A or X: this board.', 512, 1010, 990);
+		c.fillText('Skis: lean to turn. Board: front arm steers.  Grips: brake.  Bend your knees: speed.  Stand up fast: jump.', 512, 1052, 990);
+		c.fillText('Chase: trigger = fire.  A = next weapon.  Other hand: grip = hold the weapon, trigger = grenade.', 512, 1094, 990);
+		c.fillText('Push a thumbstick down: 360 photo.', 512, 1136, 990);
 	} else {
-		c.fillText('Arrow keys: select and change.  ENTER: OK.  M: this board.  N: new run.', 512, 880, 990);
-		c.fillText('Pointer or A D: turn.  W: push.  S: brake.  SHIFT: speed.  SPACE or J: jump.', 512, 922, 990);
-		c.fillText('Chase: click or SPACE = fire.  1 2 3 = weapon.  Q or right button = scope.  G = grenade.', 512, 964, 990);
+		c.fillText('Arrow keys: select and change.  ENTER: OK.  M: this board.  N: new run.', 512, 1010, 990);
+		c.fillText('Pointer or A D: turn.  W: push.  S: brake.  SHIFT: speed.  SPACE or J: jump.', 512, 1052, 990);
+		c.fillText('Chase: click or SPACE = fire.  1 2 3 = weapon.  Q or right button = scope.  G = grenade.', 512, 1094, 990);
+		c.fillText('P: 360 photo.', 512, 1136, 990);
 	}
+	c.fillStyle = '#ffd24a';
+	c.fillText('Copilot code of this device: ' + Copilot.code + '   ' + Copilot.status, 512, 1182, 990);
 	menuMesh.material.map.needsUpdate = true;
 }
 
 function updateHub(dt) {
 	var d = wrapPi(head.yaw - hubYaw);
 	// the hub turns with your head, but only after you turn away from it
-	if (!vr) hubYaw = camera.rotation.y;
+	if (Copilot.role === 'copilot') hubYaw = cop.hubYaw;
+	else if (!vr) hubYaw = camera.rotation.y;
 	else {
 		if (Math.abs(d) > (game.state == 'menu' ? 0.4 : 0.7)) hubMove = true;
 		if (hubMove) { hubYaw += d * (1 - Math.exp(-dt * 4)); if (Math.abs(d) < 0.05) hubMove = false; }
@@ -569,8 +604,8 @@ function updateHub(dt) {
 	hub.visible = vr || !(game.spy && gun.scoped);
 	hub.position.set(cal.cx, 0, cal.cz); hub.rotation.y = hubYaw;
 	statusMesh.position.set(0, cal.h + 0.66, -2.3);
-	menuMesh.position.set(0, cal.h - 0.1, -2.0);
-	menuMesh.visible = game.state == 'menu';
+	menuMesh.position.set(0, cal.h - 0.2, -2.0);
+	menuMesh.visible = game.state == 'menu' && !photo.vrOn;
 	statusMesh.visible = !menuMesh.visible;
 	if (menuMesh.visible) drawMenu();
 	statusT -= dt;
@@ -586,14 +621,23 @@ function menuChange(dx) {
 	var r = menuRows()[menu.sel];
 	if (r == 'CONTINUE') { game.state = 'run'; game.paused = false; return; }
 	if (r == 'START' || r == 'NEW RUN') { startRun(); return; }
+	if (r == 'TAKE PHOTO 360') { photoTake(0); return; }           // the hub is not in the photo
+	if (r == 'VIEW PHOTOS') { if (vr) photoVROpen(); else galleryShow(true); return; }
+	if (optStep(r, dx) && game.paused) { game.paused = false; menu.sel--; }
+}
+
+// optStep changes one option. It returns true if the option stops the run (a new run is necessary).
+function optStep(r, dx) {
 	opt[r.key] = (opt[r.key] + dx + r.vals.length) % r.vals.length;
 	saveOptions();
 	if (r.key == 'look') applyLook();
 	// equipment, game, enemies and start position are for a new run: a change of these stops the run that you have
 	if (r.key == 'gear' || r.key == 'game' || r.key == 'start' || r.key == 'diff') {
-		if (game.paused) { game.paused = false; menu.sel--; }
+		if (game.state == 'run' || game.state == 'done') { game.state = 'menu'; game.paused = false; menu.sel = 0; }
 		toStart();
+		return true;
 	}
+	return false;
 }
 
 // menuButton: A, X or M. It opens and closes the options board.
@@ -743,6 +787,260 @@ function events() {
 	if (game.state == 'run' && sk.t >= T_END) finishRun();
 }
 
+// ---------- copilot ----------
+
+// The pilot (the Quest) sends: the skier, the view, the hub, the enemies, the explosions and the options.
+// The copilot (the Mac) draws the same mountain from this state. It does not run the physics or the enemies.
+// It shows the view of the pilot, or an outside view (key C). Its panel changes the options of the pilot.
+// Photos that the pilot takes go to the copilot as JPEG files (photo.js).
+
+var ROW_PHOTO = 2;                       // the copilot line that takes a photo
+var FTYPE = ['skier', 'sled', 'truck', 'chute', 'heli', 'plane', 'guard'];
+var STATES = ['menu', 'run', 'done'];
+var cop = {
+	view: 0,                             // 0 = the view of the pilot, 1 = outside view
+	vr: 0,                               // the pilot is in VR
+	ghosts: {},                          // the enemies, by id
+	booms: [],                           // pilot: explosions for the next message
+	headPos: new THREE.Vector3(0, 1.7, 0), quat: new THREE.Quaternion(), hubYaw: 0, look: -1,
+	skier: null
+};
+var CV1 = new THREE.Vector3(), CV2 = new THREE.Vector3();
+
+function pilotVR() { return Copilot.role === 'copilot' ? !!cop.vr : vr; }
+
+function copilotStart() {
+	Copilot.start({
+		name: 'ski',
+		getState: copState,
+		setState: copApply,
+		rows: copRows,
+		select: copSelect,
+		role: copRole,
+		onFile: function (meta, blob) {
+			if (meta.type !== 'image/jpeg' || Copilot.role !== 'copilot') return;
+			meta.from = 'pilot';
+			photoAdd(blob, meta, null);
+		},
+		onFileDone: function () { say('THE COPILOT HAS THE PHOTO', 2); },
+		onCopilots: function (n) { say(n ? 'COPILOT CONNECTED' : 'NO COPILOT', 2); galleryDraw(); }
+	});
+}
+
+// chase.js calls copBoom for each explosion
+function copBoom(x, y, z, r) {
+	if (Copilot.role === 'pilot' && Copilot.copilots && cop.booms.length < 40) cop.booms.push(r2(x), r2(y), r2(z), r2(r));
+}
+
+function r2(v) { return Math.round(v * 100) / 100; }
+function r4(v) { return Math.round(v * 10000) / 10000; }
+
+// pilot: the state, as one small object
+function copState() {
+	var f = [], pd = '', i, x, b = cop.booms, q = camera.quaternion;
+	cop.booms = [];
+	for (i = 0; i < foes.length; i++) {
+		x = foes[i];
+		if (!x.mesh.visible) continue;
+		f.push(x.id, FTYPE.indexOf(x.type), r2(x.mesh.position.x), r2(x.mesh.position.y), r2(x.mesh.position.z),
+			r4(x.mesh.rotation.x), r4(x.mesh.rotation.y), r4(x.mesh.rotation.z), (x.dead > 0 ? 1 : 0) | (x.air && x.part ? 2 : 0));
+	}
+	for (i = 0; i < props.length; i++) pd += props[i].dead ? '1' : '0';
+	return {
+		s: [r2(sk.x), r2(sk.y), r2(sk.z), r2(sk.vx), r2(sk.vy), r2(sk.vz), r4(sk.hdg), r2(sk.speed), r4(sk.rise), r4(sk.tilt),
+			sk.ground ? 1 : 0, r2(sk.fallen), r2(sk.skid), sk.surf, r2(sk.t), r2(sk.d)],
+		m: sk.mode,
+		g: [STATES.indexOf(game.state), game.paused ? 1 : 0, game.spy ? 1 : 0, r2(game.runTime), r2(game.vmax), game.jumps, r2(game.air),
+			r2(game.msgUntil - game.time), r2(game.white), game.steerSrc, menu.sel],
+		gm: game.msg, gr: game.result,
+		c: [chase.on ? 1 : 0, chase.mode, chase.diff, chase.score, chase.kills, r2(chase.health), chase.left, chase.stage, r2(chase.down), r2(chase.flash), r2(chaseTime - chase.msgTime)],
+		ct: chase.text, cm: chase.msg,
+		w: [gun.w, gun.ammo[gun.w], gun.reload > 0 ? 1 : 0, gun.gren, gun.two ? 1 : 0],
+		o: opt,
+		r: [r4(viewDir), r4(cal.cx), r4(cal.cz), r4(cal.h), r4(cal.fwd), r4(hubYaw)],
+		h: [r4(head.x), r4(head.y), r4(head.z), r4(q.x), r4(q.y), r4(q.z), r4(q.w)],
+		v: vr ? 1 : 0,
+		f: f, pd: pd, b: b
+	};
+}
+
+// the option lines of the copilot panel
+function copRows() {
+	var r = [['NEW RUN', ''], [game.state == 'run' ? 'PAUSE' : game.paused ? 'CONTINUE' : 'START', ''], ['TAKE PHOTO 360', photo.list.length + ' here']], i, o;
+	for (i = 0; i < OPTS.length; i++) {
+		o = OPTS[i];
+		r.push([o.label, o.key == 'start' && opt.game == 2 ? 'TOP' : o.vals[opt[o.key]]]);
+	}
+	return r;
+}
+
+// pilot: a line of the copilot panel (or the panel on the page of the pilot)
+function copSelect(i) {
+	if (i == 0) startRun();
+	else if (i == 1) { if (game.state == 'run' || game.paused) menuButton(); else startRun(); }
+	else if (i == ROW_PHOTO) photoTake(0);
+	else if (OPTS[i - 3]) optStep(OPTS[i - 3], 1);
+	menuKey = '';
+}
+
+function copRole(r) {
+	var i;
+	if (r == 'copilot') {
+		stopChase();
+		game.state = 'menu'; game.paused = false;
+		gun.scoped = false; setFov(72);
+		cop.look = -1;
+	} else {
+		for (i in cop.ghosts) copDrop(cop.ghosts[i]);
+		cop.ghosts = {};
+		if (cop.skier) cop.skier.visible = false;
+		while (props.length) chaseScene.remove(props.pop().mesh);
+		loadOptions();                   // your own options again
+		applyLook();
+		game.state = 'menu'; game.paused = false; game.msg = ''; game.result = '';
+		camera.position.set(0, 1.7, 0); camera.quaternion.identity(); camera.rotation.set(0, 0, 0);
+		toStart();
+	}
+	menuKey = '';
+	galleryDraw();
+}
+
+// copilot: copy the state of the pilot into this game
+function copApply(s) {
+	var a = s.s, g = s.g, c = s.c, w = s.w, k, i, p;
+	sk.x = a[0]; sk.y = a[1]; sk.z = a[2]; sk.vx = a[3]; sk.vy = a[4]; sk.vz = a[5]; sk.hdg = a[6]; sk.speed = a[7];
+	sk.rise = a[8]; sk.tilt = a[9]; sk.ground = !!a[10]; sk.fallen = a[11]; sk.skid = a[12]; sk.surf = a[13]; sk.t = a[14]; sk.d = a[15];
+	sk.mode = s.m;
+	game.state = STATES[g[0]] || 'menu'; game.paused = !!g[1]; game.spy = !!g[2]; game.runTime = g[3]; game.vmax = g[4]; game.jumps = g[5];
+	game.air = g[6]; game.msgUntil = game.time + g[7]; game.white = g[8]; game.steerSrc = g[9]; menu.sel = g[10];
+	game.msg = s.gm; game.result = s.gr;
+	chase.on = !!c[0]; chase.mode = c[1]; chase.diff = c[2]; chase.score = c[3]; chase.kills = c[4]; chase.health = c[5];
+	chase.left = c[6]; chase.stage = c[7]; chase.down = c[8]; chase.flash = Math.max(chase.flash, c[9]); chase.msgTime = chaseTime - c[10];
+	chase.text = s.ct; chase.msg = s.cm;
+	gun.w = w[0]; gun.ammo[gun.w] = w[1]; gun.reload = w[2]; gun.gren = w[3]; gun.two = !!w[4];
+	for (k in s.o) if (k in opt) opt[k] = s.o[k];
+	if (opt.look !== cop.look) {
+		cop.look = opt.look;
+		applyLook();
+		for (k in cop.ghosts) copDrop(cop.ghosts[k]);
+		cop.ghosts = {};
+	}
+	viewDir = s.r[0]; cal.cx = s.r[1]; cal.cz = s.r[2]; cal.h = s.r[3]; cal.fwd = s.r[4]; cop.hubYaw = s.r[5];
+	cop.headPos.set(s.h[0], s.h[1], s.h[2]);
+	cop.quat.set(s.h[3], s.h[4], s.h[5], s.h[6]).normalize();
+	cop.vr = s.v;
+	// the targets of the bases
+	if (chase.on && !props.length) makeProps();
+	if (!chase.on && props.length) while (props.length) chaseScene.remove(props.pop().mesh);
+	for (i = 0; i < props.length && i < s.pd.length; i++) {
+		p = props[i];
+		if (s.pd[i] == '1' && !p.dead) propDead(p);
+	}
+	copFoes(s.f);
+	for (i = 0; i + 3 < s.b.length; i += 4) boom(s.b[i], s.b[i + 1], s.b[i + 2], s.b[i + 3]);
+}
+
+// the enemies of the copilot are models with no behavior: they only copy the position of the enemies of the pilot
+function copGhost(type) {
+	var g = { type: type, mesh: new THREE.Mesh(foeGeo[type], foeMat), part: null, rotor: null, prop: null };
+	g.mesh.rotation.order = 'YXZ';
+	if (type == 'heli') {
+		g.rotor = new THREE.Mesh(foeGeo.rotor, foeMat); g.rotor.position.y = 1.78; g.mesh.add(g.rotor);
+		g.prop = new THREE.Mesh(foeGeo.prop, foeMat); g.prop.position.set(0.25, 1.1, 5.9); g.prop.rotation.y = Math.PI / 2; g.mesh.add(g.prop);
+	} else if (type == 'plane') {
+		g.prop = new THREE.Mesh(foeGeo.prop, foeMat); g.prop.position.set(0, -0.05, -3.75); g.mesh.add(g.prop);
+	} else if (type == 'chute') {
+		g.part = new THREE.Group();
+		g.part.add(new THREE.Mesh(foeGeo.canopy, canopyMat), new THREE.Mesh(foeGeo.lines, foeMat));
+		g.part.children[0].position.y = 5.2; g.part.children[1].position.y = -0.9;
+		scene.add(g.part);
+	}
+	scene.add(g.mesh);
+	return g;
+}
+
+function copDrop(g) {
+	scene.remove(g.mesh);
+	if (g.part) scene.remove(g.part);
+}
+
+function copFoes(f) {
+	var seen = {}, i, id, type, g;
+	for (i = 0; i + 8 < f.length; i += 9) {
+		id = f[i]; type = FTYPE[f[i + 1]];
+		if (!type) continue;
+		g = cop.ghosts[id];
+		if (!g || g.type !== type) { if (g) copDrop(g); g = cop.ghosts[id] = copGhost(type); }
+		g.mesh.position.set(f[i + 2], f[i + 3], f[i + 4]);
+		g.mesh.rotation.set(f[i + 5], f[i + 6], f[i + 7]);
+		if (g.part) {
+			g.part.visible = !!(f[i + 8] & 2);
+			g.part.position.copy(g.mesh.position);
+			g.part.rotation.z = g.mesh.rotation.z;
+		}
+		seen[id] = 1;
+	}
+	for (id in cop.ghosts) if (!seen[id]) { copDrop(cop.ghosts[id]); delete cop.ghosts[id]; }
+}
+
+// copilot: the camera. View of the pilot: the head of the pilot. Outside view: 8 m behind and 3.5 m above the skier.
+function copView(dt) {
+	var c, s, f;
+	rigYaw = viewDir - cal.fwd;
+	if (Math.abs(sk.y - rigY) > 8) rigY = sk.y;
+	rigY += (sk.y - rigY) * (1 - Math.exp(-dt / 0.03));
+	c = Math.cos(rigYaw); s = Math.sin(rigYaw);
+	rig.position.set(sk.x - (cal.cx * c + cal.cz * s), rigY, sk.z - (-cal.cx * s + cal.cz * c));
+	rig.rotation.y = rigYaw;
+	rig.updateMatrixWorld(true);
+	if (!cop.skier) {
+		cop.skier = new THREE.Mesh(foeGeo.skier, new THREE.MeshLambertMaterial({ color: 0x3a7bd5 }));
+		cop.skier.rotation.order = 'YXZ';
+		scene.add(cop.skier);
+	}
+	cop.skier.visible = cop.view == 1;
+	if (cop.view == 0) {
+		camera.position.lerp(cop.headPos, Math.min(1, 12 * dt));
+		camera.quaternion.slerp(cop.quat, Math.min(1, 8 * dt));
+	} else {
+		cop.skier.position.set(sk.x, sk.y, sk.z);
+		cop.skier.rotation.set(Math.atan(sk.rise), sk.hdg, sk.fallen > 0 ? 1.2 : -ctl.steer * 0.3);
+		f = Math.atan2(-sk.vx, -sk.vz);
+		if (sk.speed < 2) f = sk.hdg;
+		CV1.set(sk.x + Math.sin(f) * 8, sk.y + 3.5, sk.z + Math.cos(f) * 8);
+		CV1.y = Math.max(CV1.y, groundAt(CV1.x, CV1.z) + 1.5);
+		rig.worldToLocal(CV2.copy(CV1));
+		camera.position.lerp(CV2, Math.min(1, 6 * dt));
+		camera.updateMatrixWorld(true);
+		camera.lookAt(sk.x, sk.y + 1.2, sk.z);
+	}
+}
+
+// copilot: one frame
+function copFrame(dt) {
+	var k, g;
+	// between two messages the skier moves on with its last speed
+	if (game.state == 'run' && !game.paused) {
+		sk.x += sk.vx * dt; sk.z += sk.vz * dt;
+		sk.y = Math.max(sk.y + sk.vy * dt, groundAt(sk.x, sk.z));
+	}
+	chaseTime += dt;
+	for (k in cop.ghosts) {
+		g = cop.ghosts[k];
+		if (g.rotor) g.rotor.rotation.y += 32 * dt;
+		if (g.prop) g.prop.rotation[g.type == 'heli' ? 'x' : 'z'] += 50 * dt;
+	}
+	updateFx(dt);
+	copView(dt);
+	gunHolder.visible = false; aimDot.visible = false; deskCross.visible = false;
+	updateWorld(sk.x, sk.y, sk.z, game.time);
+	updateGear(dt);
+	updateHub(dt);
+	hub.visible = cop.view == 0;          // in the outside view the hub of the pilot is far away
+	updateSound(dt);
+	renderer.render(scene, camera);
+}
+
 // ---------- frame loop ----------
 
 function frame(ms, xrFrame) {
@@ -750,6 +1048,8 @@ function frame(ms, xrFrame) {
 	lastT = now;
 	game.time += dt;
 	vr = renderer.xr.isPresenting;
+	Copilot.update();                 // the copilot link also works in VR
+	if (Copilot.role === 'copilot' && !vr) { copFrame(dt); return; }
 
 	readHead(dt, xrFrame);
 	readInput(dt);
@@ -770,6 +1070,7 @@ function frame(ms, xrFrame) {
 	updateGear(dt);
 	updateHub(dt);
 	updateSound(dt);
+	photoUpdate(dt);
 	renderScope();
 	renderer.render(scene, camera);
 }
